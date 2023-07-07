@@ -8,6 +8,7 @@ from torch.utils.tensorboard import SummaryWriter
 from myllm_model import MyModel
 from data_loader import SelfInstructLoader
 from train_epoch import train_epoch
+from mytkn import get_tkn
 
 mount_dir = '..'
 
@@ -41,15 +42,7 @@ print(f'''
     ds_cfg_path: {ds_cfg_path}
 ''')
 
-START_SIGN = '<start>'
-END_SIGN = '<end>'
-
-tkn = GPT2Tokenizer.from_pretrained(tkn_path)
-tkn.pad_token = '[PAD]'
-tkn.add_tokens([START_SIGN, END_SIGN])
-
-START_ID, END_ID = tkn.convert_tokens_to_ids([START_SIGN, END_SIGN])
-VOCAB_SIZE = tkn.vocab_size + 2
+tkn, VOCAB_SIZE, START_SIGN, END_SIGN, START_ID, END_ID = get_tkn()
 
 model = MyModel(
     vocab=VOCAB_SIZE,

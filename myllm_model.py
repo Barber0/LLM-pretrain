@@ -157,3 +157,17 @@ class MyModel(nn.Module):
                 y.contiguous().view(-1)
             )
             return loss
+
+
+if __name__ == '__main__':
+    from mytkn import get_tkn
+    tkn, VOCAB_SIZE, START_SIGN, END_SIGN, START_ID, END_ID = get_tkn()
+    model = MyModel(
+        VOCAB_SIZE,
+        tkn.pad_token_id,
+        4096,
+        32,
+        512,
+        0.1,
+        36
+    )
