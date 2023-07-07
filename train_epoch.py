@@ -15,6 +15,10 @@ def train_epoch(
     data_loader,
     writer,
 ):
+    stime = time()
+    total_loss = 0
+    period_loss = 0
+    
     for i, batch in enumerate(data_loader()):
         if i < start_batch:
             continue
@@ -55,9 +59,8 @@ def train_epoch(
             time_period = time() - stime
             avg_ntokens = x_attn_mask.sum() / x_attn_mask.size(0)
             pad_token_len = x_attn_mask.size(-1)
-            print(f'\rbatch: {i}, time: {time_period}, avg_ntokens: {avg_ntokens},'
-                  f' loss: {period_loss}, per_loss: {period_loss / batch_period},'
-                  f' pad_len: {pad_token_len}')
+            print(f'\rep: {ep} batch: {i}, time: {time_period}, ntokens: {avg_ntokens}/{pad_token_len},'
+                  f' loss: {period_loss / batch_period}')
             writer.flush()
 
             try:
