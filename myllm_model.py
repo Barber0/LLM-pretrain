@@ -95,23 +95,33 @@ class Block(nn.Module):
         self.mlp = MLP(d_model, d_model * 4)
 
     def forward(self, x, prefix_kv=None):
-        attn_o, prefix_kv = self.attn(self.ln1(x), prefix_kv)
+        attn_o, next_prefix_kv = self.attn(self.ln1(x), prefix_kv)
         x = x + attn_o
         x = x + self.mlp(self.ln2(x))
-        return x, prefix_kv
+        if prefix_kv is None:
+            return x
+        return x, next_prefix_kv
+
+
+class PosEmb(nn.Embedding):
+    def forward(self, x, seq_len=0):
+        pos_ids = torch.arange(seq_len, seq_len + x.size(-2), device=x.device)
+        pos_ids = pos_ids.unsqueeze(0).expand(x.shape[:-1])
+        out = super().forward(pos_ids)
+        out += x
+        return out
 
 
 class MyModel(nn.Module):
     def __init__(self, vocab, pad_token_id, d_model=768, num_head=12, max_len=512, dropout=0.1, num_block=12):
         super(MyModel, self).__init__()
         self.emb = nn.Embedding(vocab, d_model)
-        self.pos = nn.Embedding(max_len, d_model)
-        # self.pos = MyPosEncoding(d_model, max_len)
+        self.pos = PosEmb(max_len, d_model)
 
-        self.blocks = nn.ModuleList([
+        self.blocks = [
             Block(d_model, num_head, max_len, dropout)
             for _ in range(num_block)
-        ])
+        ]
         self.ln = LayerNorm(d_model)
         self.decoder = nn.Linear(d_model, vocab, bias=False)
         self.loss_fn = nn.CrossEntropyLoss(ignore_index=pad_token_id)
@@ -123,24 +133,16 @@ class MyModel(nn.Module):
         else:
             seq_len = prefix_kv_list[0][0].size(-2)
 
-        pos_ids = torch.arange(seq_len, seq_len + x.size(-1), device=x.device)
-        pos_ids = pos_ids.unsqueeze(0).expand_as(x)
-
         emb_o = self.emb(x)
 
-        pos_o = None
-        try:
-            pos_o = self.pos(pos_ids)
-        except Exception as ex:
-            print(pos_ids)
-            print(ex)
-            return None, None
-
-        x_rep = emb_o + pos_o
+        x_rep = self.pos(emb_o, seq_len)
 
         next_prefix_kv_list = []
         for layer, prefix_kv in zip(self.blocks, prefix_kv_list):
-            x_rep, next_prefix_kv = layer(x_rep, prefix_kv)
+            if prefix_kv is None:
+                x_rep, next_prefix_kv = layer(x_rep), None
+            else:
+                x_rep, next_prefix_kv = layer(x_rep, prefix_kv)
             next_prefix_kv_list.append(next_prefix_kv)
 
         x_rep = self.ln(x_rep)
@@ -157,6 +159,15 @@ class MyModel(nn.Module):
                 y.contiguous().view(-1)
             )
             return loss
+
+    def pipeline(self):
+        return [
+            self.emb,
+            self.pos
+        ] + self.blocks + [
+            self.ln,
+            self.decoder
+        ]
 
 
 if __name__ == '__main__':

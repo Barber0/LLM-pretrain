@@ -6,7 +6,7 @@ from transformers import GPT2Tokenizer
 from torch.utils.tensorboard import SummaryWriter
 
 from myllm_model import MyModel
-from data_loader import SelfInstructLoader
+from data_loader import BcdsLoader
 from train_epoch import train_epoch
 from mytkn import get_tkn
 
@@ -25,14 +25,14 @@ saved_md_path = f'{md_home}/{saved_md_name}'
 md_path = f'{md_home}/{saved_md_name}'
 md_tag = 'arch_latest'
 
-ds_home = f'{mount_dir}/self_instruct'
-# ds_home = '/root/autodl-tmp/content/drive/MyDrive/webtext-datasets/arch/'
+# ds_home = f'{mount_dir}/self_instruct'
+ds_home = '/root/autodl-tmp/content/drive/MyDrive/webtext-datasets/arch/'
 
 log_path = '/root/tf-logs'
 
 tkn_path = f'{mount_dir}/gpt2-tkn'
 
-ds_cfg_path = f'{mount_dir}/ds_cfg.json'
+ds_cfg_path = f'./ds_cfg.json'
 
 print(f'''
     saved_model_path: {saved_md_path}
@@ -47,9 +47,9 @@ tkn, VOCAB_SIZE, START_SIGN, END_SIGN, START_ID, END_ID = get_tkn()
 model = MyModel(
     vocab=VOCAB_SIZE,
     pad_token_id=tkn.pad_token_id,
-    d_model=1280,
+    d_model=1024,
     num_head=32,
-    num_block=60
+    num_block=18
 )
 
 # Temporarily load backup model
@@ -63,8 +63,8 @@ model_eng, _, _, _ = deepspeed.initialize(
 )
 
 # Normaly load checkpoint
-load_tag = model_eng.load_checkpoint(
-    saved_md_path, md_tag)
+# load_tag = model_eng.load_checkpoint(
+#     saved_md_path, md_tag)
 # End of normal load
 
 
@@ -73,8 +73,8 @@ num_epochs = 5
 start_batch = 3601
 start_epoch = 0
 
-batch_size = 10
-data_loader = SelfInstructLoader(ds_home, batch_size=batch_size)
+batch_size = 20
+data_loader = BcdsLoader(ds_home, batch_size=batch_size)
 
 batch_period = 20
 
