@@ -75,7 +75,7 @@ model_eng, _, _, _ = deepspeed.initialize(
 # End of normal load
 
 
-start_batch = 0
+start_batch = 42201
 num_epochs = 1
 # start_batch = 3601
 start_epoch = 0
