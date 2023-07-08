@@ -1,5 +1,6 @@
 import math
 import torch
+from torch import Tensor
 import torch.nn as nn
 import torch.nn.functional as F
 
@@ -112,6 +113,13 @@ class PosEmb(nn.Embedding):
         return out
 
 
+class CELWrap(nn.CrossEntropyLoss):
+    def forward(self, input: Tensor, target: Tensor) -> Tensor:
+        y_pred = input.contiguous().view(-1, input.size(-1))
+        y = target.contiguous().view(-1)
+        return super().forward(y_pred, y)
+
+
 class MyModel(nn.Module):
     def __init__(self, vocab, pad_token_id, d_model=768, num_head=12, max_len=512, dropout=0.1, num_block=12):
         super(MyModel, self).__init__()
@@ -124,7 +132,7 @@ class MyModel(nn.Module):
         ]
         self.ln = LayerNorm(d_model)
         self.decoder = nn.Linear(d_model, vocab, bias=False)
-        self.loss_fn = nn.CrossEntropyLoss(ignore_index=pad_token_id)
+        self.loss_fn = CELWrap(ignore_index=pad_token_id)
 
     def raw(self, x, prefix_kv_list=None):
         if prefix_kv_list is None:
@@ -153,12 +161,9 @@ class MyModel(nn.Module):
         y_pred = self.decoder(x_rep)
         if y is None:
             return y_pred, next_prefix_kv_list
-        else:
-            loss = self.loss_fn(
-                y_pred.contiguous().view(-1, y_pred.size(-1)),
-                y.contiguous().view(-1)
-            )
-            return loss
+
+        loss = self.loss_fn(y_pred, y)
+        return loss
 
     def pipeline(self):
         return [

@@ -6,7 +6,6 @@ from myllm_model import MyModel
 from data_loader import BcdsDataset
 from mytkn import get_tkn
 import deepspeed
-import torch.nn as nn
 
 
 def save_chkpt(
