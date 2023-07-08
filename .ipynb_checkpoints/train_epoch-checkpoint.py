@@ -9,8 +9,6 @@ def train_epoch(
     md_path,
     md_tag,
     mount_dir,
-    START_SIGN,
-    END_SIGN,
     tkn,
     data_loader,
     writer,
@@ -51,12 +49,13 @@ def train_epoch(
             time_period = time() - stime
             avg_ntokens = x_attn_mask.sum() / x_attn_mask.size(0)
             pad_token_len = x_attn_mask.size(-1)
-            print(f'\rep: {ep} batch: {i}, time: {time_period}, ntokens: {avg_ntokens}/{pad_token_len},'
-                  f' loss: {period_loss / batch_period}')
+            print('\rep: {} batch: {}, time: {:.2f}, ntokens: {:.2f}/{}, loss: {}'.format(
+                ep, i, time_period, avg_ntokens, pad_token_len, period_loss/batch_period
+            ))
             writer.flush()
 
             try:
-                if i % 200 == 0:
+                if i % 500 == 0:
                     save_chkpt(str(i), model_eng, mount_dir, md_path, md_tag)
             except Exception as e:
                 print(e)

@@ -9,8 +9,6 @@ def train_epoch(
     md_path,
     md_tag,
     mount_dir,
-    START_SIGN,
-    END_SIGN,
     tkn,
     data_loader,
     writer,
@@ -57,7 +55,7 @@ def train_epoch(
             writer.flush()
 
             try:
-                if i % 200 == 0:
+                if i % 500 == 0:
                     save_chkpt(str(i), model_eng, mount_dir, md_path, md_tag)
             except Exception as e:
                 print(e)

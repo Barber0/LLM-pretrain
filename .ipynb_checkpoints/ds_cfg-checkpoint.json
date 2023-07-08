@@ -5,16 +5,8 @@
     "optimizer": {
         "type": "AdamW",
         "params": {
-            "lr": 0.00007,
+            "lr": 0.0002947742918446018,
             "weight_decay": 0.01
-        }
-    },
-    "scheduler": {
-        "type": "WarmupLR",
-        "params": {
-            "warmup_min_lr": 0.00001,
-            "warmup_max_lr": 0.0003,
-            "warmup_num_steps": 5000
         }
     },
     "fp16": {
