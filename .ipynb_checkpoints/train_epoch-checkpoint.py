@@ -12,6 +12,7 @@ def train_epoch(
     tkn,
     data_loader,
     writer,
+    max_len
 ):
     stime = time()
     total_loss = 0
@@ -23,7 +24,7 @@ def train_epoch(
 
         x_encoded = tkn.batch_encode_plus(
             batch,
-            max_length=512,
+            max_length=max_len,
             padding=True,
             truncation=True,
             return_tensors='pt'
