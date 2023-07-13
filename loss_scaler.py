@@ -6,7 +6,7 @@ from utils import build_logger
 
 class LossScaler:
     def __init__(self,
-                 init_scale=2**32,
+                 init_scale=1,
                  min_scale=1,
                  scale_factor=2,
                  logger=None,

@@ -146,7 +146,7 @@ class MyModel(nn.Module):
         x_rep = self.ln(x_rep)
         return x_rep, next_prefix_kv_list
 
-    def forward(self, x, y=None, prefix_kv_list=None):
+    def forward(self, x, y=None, prefix_kv_list=None, num_micro_batch=1):
         x_rep, next_prefix_kv_list = self.raw(x, prefix_kv_list)
         y_pred = self.decoder(x_rep)
         if y is None:
@@ -155,5 +155,5 @@ class MyModel(nn.Module):
             loss = self.loss_fn(
                 y_pred.contiguous().view(-1, y_pred.size(-1)),
                 y.contiguous().view(-1)
-            )
+            ) / num_micro_batch
             return loss
