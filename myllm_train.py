@@ -5,7 +5,7 @@ from transformers import GPT2Tokenizer
 from torch.utils.tensorboard import SummaryWriter
 
 from myllm_model import MyModel
-from data_loader import BcdsLoader
+from data_loader import DataLoader
 from train_epoch import train_epoch
 
 mount_dir = '..'
@@ -42,12 +42,14 @@ tkn = GPT2Tokenizer.from_pretrained(tkn_path)
 tkn.pad_token = '[PAD]'
 VOCAB_SIZE = tkn.vocab_size
 
+max_len = 1024
 model = MyModel(
     vocab=VOCAB_SIZE,
     pad_token_id=tkn.pad_token_id,
-    d_model=1280,
+    d_model=2048,
     num_head=32,
-    num_block=60
+    num_block=26,
+    max_len=max_len
 )
 
 # Temporarily load backup model
@@ -71,7 +73,7 @@ num_epochs = 1
 start_epoch = 0
 
 batch_size = 10
-data_loader = BcdsLoader(ds_home, batch_size=batch_size)
+data_loader = DataLoader('openwebtext', ds_home, batch_size=batch_size)
 
 batch_period = 20
 
@@ -87,7 +89,8 @@ train_epoch(
     mount_dir,
     tkn,
     data_loader,
-    writer
+    writer,
+    max_len
 )
 
 # for ep in range(start_epoch+1, num_epochs):

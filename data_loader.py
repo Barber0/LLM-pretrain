@@ -14,7 +14,7 @@ def DataLoader(ds_name, ds_path, batch_size=5):
         batch = []
         for i, v in enumerate(data['train']):
             batch.append(ds_handler(v))
-            if i > 0 and i % batch_size == 0:
+            if (i+1) % batch_size == 0:
                 out = batch
                 batch = []
                 yield out

@@ -8,7 +8,7 @@ from torch.utils.tensorboard import SummaryWriter
 from myllm_model import MyModel
 from data_loader import DataLoader
 from loss_scaler import LossScaler
-from torch.optim import SGD
+from torch.optim import SGD, AdamW
 from utils import build_logger
 
 SAVED_MODEL_TAG = 'module'
@@ -99,6 +99,7 @@ def run(args):
             batch_loss += loss
             micro_batch_start = micro_batch_end
 
+        opt.step()
         if scaler.step(model, opt):
             continue
 
@@ -169,17 +170,17 @@ if __name__ == '__main__':
     arg_parser.add_argument('--my_log', default='./train.log')
 
     arg_parser.add_argument('--start_batch', default=0)
-    arg_parser.add_argument('--batch_period', default=10)
+    arg_parser.add_argument('--batch_period', default=20)
     arg_parser.add_argument('--save_period', default=500)
 
-    arg_parser.add_argument('--batch_size', default=50)
-    arg_parser.add_argument('--micro_batch', default=10)
+    arg_parser.add_argument('--batch_size', default=10)
+    arg_parser.add_argument('--micro_batch', default=2)
     arg_parser.add_argument('--lr', default=1e-2)
 
     arg_parser.add_argument('--max_len', default=1024)
-    arg_parser.add_argument('--d_model', default=256)
+    arg_parser.add_argument('--d_model', default=2048)
     arg_parser.add_argument('--n_head', default=32)
-    arg_parser.add_argument('--n_block', default=6)
+    arg_parser.add_argument('--n_block', default=26)
 
     args = arg_parser.parse_args()
 
