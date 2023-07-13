@@ -1,0 +1,24 @@
+OVERFLOW! Scale value 4294967296 -> 2147483648
+batch: 9, time: 28.32, ntokens: 618.06/1024, loss: 55.84
+batch: 19, time: 25.32, ntokens: 667.06/1024, loss: 54.75
+batch: 29, time: 25.25, ntokens: 653.36/1024, loss: 54.75
+batch: 39, time: 24.74, ntokens: 740.26/1024, loss: 54.75
+batch: 49, time: 24.04, ntokens: 748.96/1024, loss: 54.75
+batch: 59, time: 26.45, ntokens: 661.98/1024, loss: 54.75
+batch: 69, time: 24.16, ntokens: 645.76/1024, loss: 54.75
+batch: 10, time: 27.23, ntokens: 618.06/1024, loss: 55.81
+batch: 20, time: 26.48, ntokens: 667.06/1024, loss: 54.69
+batch: 30, time: 26.25, ntokens: 653.36/1024, loss: 54.69
+batch: 40, time: 25.52, ntokens: 740.26/1024, loss: 54.69
+batch: 50, time: 25.18, ntokens: 748.96/1024, loss: 54.69
+batch: 60, time: 26.48, ntokens: 661.98/1024, loss: 54.69
+batch: 70, time: 24.47, ntokens: 645.76/1024, loss: 54.69
+batch: 80, time: 25.03, ntokens: 711.90/1024, loss: 54.75
+batch: 10, time: 27.18, ntokens: 618.06/1024, loss: 55.91
+batch: 20, time: 25.96, ntokens: 667.06/1024, loss: 54.75
+batch: 30, time: 25.64, ntokens: 653.36/1024, loss: 54.75
+batch: 40, time: 25.70, ntokens: 740.26/1024, loss: 54.81
+batch: 50, time: 23.31, ntokens: 748.96/1024, loss: 54.81
+batch: 10, time: 26.41, ntokens: 618.06/1024, loss: 11.164062
+batch: 20, time: 26.06, ntokens: 667.06/1024, loss: 10.945312
+batch: 30, time: 27.82, ntokens: 653.36/1024, loss: 10.945312
