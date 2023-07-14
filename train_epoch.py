@@ -18,6 +18,7 @@ def train_epoch(
     total_loss = 0
     period_loss = 0
     
+    # ext_max_len = max_len + 1
     for i, batch in enumerate(data_loader()):
         if i < start_batch:
             continue

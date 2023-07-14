@@ -16,7 +16,7 @@ md_home = 'llm-model'
 md_home = f'{mount_dir}/{md_home}'
 os.makedirs(md_home, exist_ok=True)
 
-saved_md_path = f'/root/autodl-tmp/myllm4-2B'
+saved_md_path = f'/root/autodl-tmp/myllm3-2B-wiki'
 md_path = saved_md_path
 md_tag = 'main'
 
