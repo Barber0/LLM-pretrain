@@ -1,12 +1,14 @@
 import torch
 import os
 import deepspeed
-from transformers import GPT2Tokenizer
-from torch.utils.tensorboard import SummaryWriter
 
+from transformers import GPT2Tokenizer
 from myllm_model import MyModel
+
 from data_loader import BcdsLoader
 from train_epoch import train_epoch
+
+from torch.utils.tensorboard import SummaryWriter
 
 mount_dir = '..'
 
@@ -17,8 +19,8 @@ md_home = 'llm-model'
 md_home = f'{mount_dir}/{md_home}'
 os.makedirs(md_home, exist_ok=True)
 
-saved_md_path = f'{md_home}/{saved_md_name}'
-md_path = f'{md_home}/{saved_md_name}'
+saved_md_path = f'/root/autodl-tmp/myllm3-2B'
+md_path = saved_md_path
 md_tag = 'main'
 
 # ds_home = f'{mount_dir}/self_instruct'
@@ -40,19 +42,23 @@ print(f'''
 
 tkn = GPT2Tokenizer.from_pretrained(tkn_path)
 tkn.pad_token = '[PAD]'
+tkn.add_tokens(['[END]'])
 VOCAB_SIZE = tkn.vocab_size
+
+max_len = 512
 
 model = MyModel(
     vocab=VOCAB_SIZE,
     pad_token_id=tkn.pad_token_id,
-    d_model=1280,
+    d_model=2560,
     num_head=32,
-    num_block=60
+    num_block=24,
+    max_len=max_len
 )
 
 # Temporarily load backup model
-# chkpt = torch.load('/root/autodl-tmp/myllm2-1B-6800.pt')
-# model.load_state_dict(chkpt['module'])
+chkpt = torch.load('/root/autodl-tmp/backup/myllm3-2B-94800.pt')
+model.load_state_dict(chkpt['module'])
 # End of tmp load
 
 model_eng, _, _, _ = deepspeed.initialize(
@@ -61,19 +67,20 @@ model_eng, _, _, _ = deepspeed.initialize(
 )
 
 # Normaly load checkpoint
-load_tag = model_eng.load_checkpoint(
-    saved_md_path, md_tag)
+# load_tag = model_eng.load_checkpoint(
+#     saved_md_path, md_tag)
 # End of normal load
 
 
-start_batch = 6501
+# start_batch = 81601
+start_batch = 94801
 num_epochs = 1
 start_epoch = 0
 
-batch_size = 10
+batch_size = 12
 data_loader = BcdsLoader(ds_home, batch_size=batch_size)
 
-batch_period = 20
+batch_period = 50
 
 writer = SummaryWriter(log_dir=log_path)
 
@@ -87,21 +94,6 @@ train_epoch(
     mount_dir,
     tkn,
     data_loader,
-    writer
+    writer,
+    max_len
 )
-
-# for ep in range(start_epoch+1, num_epochs):
-#     train_epoch(
-#         ep,
-#         model_eng,
-#         0,
-#         batch_period,
-#         md_path,
-#         md_tag,
-#         mount_dir,
-#         START_SIGN,
-#         END_SIGN,
-#         tkn,
-#         data_loader,
-#         writer
-#     )
