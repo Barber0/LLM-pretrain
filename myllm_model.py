@@ -27,12 +27,14 @@ class MultiAttn(nn.Module):
         self.head_size = d_model // num_head
         self.head_scale = math.sqrt(self.head_size)
 
-        self.register_buffer(
-            'mask', 1 - torch.triu(torch.ones((1, 1, max_len, max_len)), diagonal=1))
+        self.register_buffer('mask', self.create_mask(max_len))
 
         self.dropout = nn.Dropout(dropout)
         self.proj = nn.Linear(d_model, d_model * 3)
         self.ff = nn.Linear(d_model, d_model)
+        
+    def create_mask(self, mask_size):
+        return 1 - torch.triu(torch.ones((1, 1, mask_size, mask_size)), diagonal=1)
 
     def forward(self, x, prefix_kv=None):
         x_proj = self.proj(x)

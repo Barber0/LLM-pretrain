@@ -1,2 +1,4 @@
 .ipynb*
 .vscode/
+__pycache__/
+tmp/
