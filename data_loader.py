@@ -18,4 +18,4 @@ def DataLoader(ds_name, ds_path, batch_size=5):
                 out = batch
                 batch = []
                 yield out
-    return _iter
+    return _iter, data['train'].num_rows
