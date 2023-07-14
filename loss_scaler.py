@@ -1,7 +1,6 @@
 import torch
 import torch.nn as nn
 from torch.optim.optimizer import Optimizer
-from utils import build_logger
 
 
 class LossScaler:
@@ -68,7 +67,7 @@ class LossScaler:
 if __name__ == '__main__':
     scaler = LossScaler()
 
-    from myllm_model import MyModel
+    from model import MyModel
     from torch.optim import SGD
     model = MyModel(
         vocab=100,

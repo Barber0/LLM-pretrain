@@ -134,9 +134,9 @@ class Block(nn.Module):
         return x, prefix_kv
 
 
-class MyModel(nn.Module):
+class LLM(nn.Module):
     def __init__(self, vocab, pad_token_id, d_model=768, num_head=12, max_len=512, dropout=0.1, num_block=12):
-        super(MyModel, self).__init__()
+        super(LLM, self).__init__()
         self.emb = nn.Embedding(vocab, d_model)
         self.pos = nn.Embedding(max_len, d_model)
         # self.pos = MyPosEncoding(d_model, max_len)

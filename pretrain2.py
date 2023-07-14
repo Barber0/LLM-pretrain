@@ -9,6 +9,14 @@ from loss_scaler import LossScaler
 from torch.optim import AdamW
 from utils import build_logger, get_args, save_chkpt, prepare_tokenizer
 
+from torch.distributed.fsdp import (
+    FullyShardedDataParallel,
+    CPUOffload,
+)
+from torch.nn.parallel import DistributedDataParallel
+from torch.distributed.fsdp.wrap import default_auto_wrap_policy
+from torch.distributed import init_process_group
+
 
 def run(args):
     logger = build_logger(
@@ -26,6 +34,14 @@ def run(args):
         num_head=args.n_head,
         num_block=args.n_block,
         max_len=args.max_len
+    )
+
+    init_process_group(backend='nccl')
+    model = DistributedDataParallel(model)
+    model = FullyShardedDataParallel(
+        model(),
+        fsdp_auto_wrap_policy=default_auto_wrap_policy,
+        cpu_offload=CPUOffload(offload_params=True),
     ).cuda()
 
     opt = AdamW(model.parameters(), lr=args.lr)
