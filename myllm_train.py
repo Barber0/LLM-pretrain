@@ -5,26 +5,23 @@ import deepspeed
 from transformers import GPT2Tokenizer
 from myllm_model import MyModel
 
-from data_loader import BcdsLoader
+from data_loader import WikiLoader
 from train_epoch import train_epoch
 
 from torch.utils.tensorboard import SummaryWriter
 
 mount_dir = '..'
 
-saved_md_name = 'myllm2-1B'
-md_name = saved_md_name
-
 md_home = 'llm-model'
 md_home = f'{mount_dir}/{md_home}'
 os.makedirs(md_home, exist_ok=True)
 
-saved_md_path = f'/root/autodl-tmp/myllm3-2B'
+saved_md_path = f'/root/autodl-tmp/myllm4-2B'
 md_path = saved_md_path
 md_tag = 'main'
 
 # ds_home = f'{mount_dir}/self_instruct'
-ds_home = '/root/autodl-tmp/content/drive/MyDrive/webtext-datasets/arch/'
+ds_home = '/root/autodl-tmp/wiki/'
 
 log_path = '/root/tf-logs'
 
@@ -46,6 +43,7 @@ tkn.add_tokens(['[END]'])
 VOCAB_SIZE = tkn.vocab_size
 
 max_len = 512
+overlap_factor = 5
 
 model = MyModel(
     vocab=VOCAB_SIZE,
@@ -57,7 +55,7 @@ model = MyModel(
 )
 
 # Temporarily load backup model
-chkpt = torch.load('/root/autodl-tmp/backup/myllm3-2B-94800.pt')
+chkpt = torch.load('/root/myllm3-2B-103200.pt')
 model.load_state_dict(chkpt['module'])
 # End of tmp load
 
@@ -73,12 +71,12 @@ model_eng, _, _, _ = deepspeed.initialize(
 
 
 # start_batch = 81601
-start_batch = 94801
+start_batch = 0
 num_epochs = 1
 start_epoch = 0
 
 batch_size = 12
-data_loader = BcdsLoader(ds_home, batch_size=batch_size)
+data_loader = WikiLoader(ds_home, max_len=max_len, overlap_factor=overlap_factor, batch_size=batch_size)
 
 batch_period = 50
 
