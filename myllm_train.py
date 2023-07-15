@@ -5,7 +5,7 @@ import deepspeed
 from transformers import GPT2Tokenizer
 from myllm_model import MyModel
 
-from data_loader import WikiLoader
+from data_loader import WikiLoader, SelfInstructLoader
 from train_epoch import train_epoch
 
 from torch.utils.tensorboard import SummaryWriter
@@ -21,7 +21,8 @@ md_path = saved_md_path
 md_tag = 'main'
 
 # ds_home = f'{mount_dir}/self_instruct'
-ds_home = '/root/autodl-tmp/wiki/'
+# ds_home = '/root/autodl-tmp/wiki/'
+ds_home = '/root/autodl-tmp/content/drive/MyDrive/self_instruct-datasets/self_instruct/'
 
 log_path = '/root/tf-logs'
 
@@ -55,7 +56,7 @@ model = MyModel(
 )
 
 # Temporarily load backup model
-chkpt = torch.load('/root/myllm3-2B-103200.pt')
+chkpt = torch.load('/root/autodl-tmp/myllm3-2B-wiki-42000.pt')
 model.load_state_dict(chkpt['module'])
 # End of tmp load
 
@@ -72,26 +73,27 @@ model_eng, _, _, _ = deepspeed.initialize(
 
 # start_batch = 81601
 start_batch = 0
-num_epochs = 1
+num_epochs = 2
 start_epoch = 0
 
 batch_size = 12
-data_loader = WikiLoader(ds_home, max_len=max_len, overlap_factor=overlap_factor, batch_size=batch_size)
+data_loader = SelfInstructLoader(ds_home, max_len=max_len, overlap_factor=overlap_factor, batch_size=batch_size)
 
 batch_period = 50
 
 writer = SummaryWriter(log_dir=log_path)
 
-train_epoch(
-    start_epoch,
-    model_eng,
-    start_batch,
-    batch_period,
-    md_path,
-    md_tag,
-    mount_dir,
-    tkn,
-    data_loader,
-    writer,
-    max_len
-)
+for ep in range(start_epoch, num_epochs):
+    train_epoch(
+        ep,
+        model_eng,
+        start_batch,
+        batch_period,
+        md_path,
+        md_tag,
+        mount_dir,
+        tkn,
+        data_loader,
+        writer,
+        max_len
+    )

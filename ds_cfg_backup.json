@@ -10,17 +10,25 @@
         }
     },
     "scheduler": {
-        "type": "WarmupLR",
+        "type": "OneCycle",
         "params": {
-            "warmup_min_lr": 0.00001,
-            "warmup_max_lr": 0.0003,
-            "warmup_num_steps": 5000
+            "cycle_first_step_size": 1000,
+            "cycle_first_stair_count": 500,
+            "cycle_second_step_size": 1000,
+            "cycle_second_stair_count": 500,
+            "decay_step_size": 1000,
+            "cycle_min_lr": 0.00007,
+            "cycle_max_lr": 0.00035,
+            "decay_lr_rate": 0.001,
+            "cycle_min_mom": 0.85,
+            "cycle_max_mom": 0.99,
+            "decay_mom_rate": 0.0
         }
     },
     "fp16": {
         "enabled": true
     },
     "zero_optimization": {
-	"stage": 1
+        "stage": 1
     }
 }
