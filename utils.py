@@ -45,7 +45,7 @@ def get_args():
 
     arg_parser.add_argument('--tkn_path', default='./tokenizer')
     arg_parser.add_argument('--log_path', default='/root/tf-logs')
-    arg_parser.add_argument('--my_log', default='./train.log')
+    arg_parser.add_argument('--my_log', default='./tmp/train.log')
 
     arg_parser.add_argument('--start_batch', default=0)
     arg_parser.add_argument('--batch_period', default=20)
@@ -71,7 +71,7 @@ def save_ds_chkpt(
     md_tag
 ):
     model_eng.save_checkpoint(ckpt_path, tag=md_tag)
-    with open(f'./progress.txt', 'w') as f:
+    with open(f'{ckpt_path}/progress.txt', 'w') as f:
         f.write(name)
 
 
