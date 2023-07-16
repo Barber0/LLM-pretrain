@@ -1,0 +1,13 @@
+ep: 0, batch: 20, time: 9.17, ntokens: 485.20/513, loss: 10.984375
+ep: 0, batch: 40, time: 8.38, ntokens: 431.70/513, loss: 10.976562
+ep: 0, batch: 60, time: 8.35, ntokens: 428.90/513, loss: 10.984375
+ep: 0, batch: 80, time: 8.46, ntokens: 513.00/513, loss: 10.914062
+ep: 0, batch: 100, time: 8.55, ntokens: 438.20/513, loss: 10.312500
+ep: 0, batch: 120, time: 8.59, ntokens: 438.20/513, loss: 10.078125
+ep: 0, batch: 140, time: 8.50, ntokens: 473.60/513, loss: 9.765625
+ep: 0, batch: 160, time: 8.53, ntokens: 408.70/513, loss: 9.601562
+ep: 0, batch: 180, time: 8.55, ntokens: 422.20/513, loss: 9.398438
+ep: 0, batch: 200, time: 8.52, ntokens: 486.30/513, loss: 9.109375
+ep: 0, batch: 220, time: 8.59, ntokens: 436.60/513, loss: 8.898438
+ep: 0, batch: 240, time: 8.56, ntokens: 460.30/513, loss: 8.687500
+ep: 0, batch: 260, time: 8.56, ntokens: 413.40/513, loss: 8.390625
