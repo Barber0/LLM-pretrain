@@ -48,7 +48,7 @@ def run(args):
         config=args.ds_cfg
     )[:2]
 
-    if args.load_path is None and args.ckpt is not None:
+    if args.load_path is None and args.ckpt is not None and os.path.exists(args.ckpt):
         model_eng.load_checkpoint(args.ckpt, args.model_name)
 
     writer = SummaryWriter(log_dir=args.log_path)

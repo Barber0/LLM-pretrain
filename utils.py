@@ -45,22 +45,21 @@ def get_args():
     arg_parser.add_argument('--log_path', default='/root/tf-logs')
     arg_parser.add_argument('--my_log', default='./tmp/train.log')
 
-    arg_parser.add_argument('--start_batch', default=0)
-    arg_parser.add_argument('--batch_period', default=20)
-    arg_parser.add_argument('--save_period', default=500)
+    arg_parser.add_argument('--start_batch', default=0, type=int)
+    arg_parser.add_argument('--batch_period', default=20, type=int)
+    arg_parser.add_argument('--save_period', default=500, type=int)
 
-    arg_parser.add_argument('--epochs', default=2)
-    arg_parser.add_argument('--batch_size', default=10)
+    arg_parser.add_argument('--epochs', default=2, type=int)
+    arg_parser.add_argument('--batch_size', default=10, type=int)
 
-    arg_parser.add_argument('--max_len', default=512)
-    arg_parser.add_argument('--d_model', default=512)
-    arg_parser.add_argument('--n_head', default=32)
-    arg_parser.add_argument('--n_block', default=12)
+    arg_parser.add_argument('--max_len', default=512, type=int)
+    arg_parser.add_argument('--d_model', default=512, type=int)
+    arg_parser.add_argument('--n_head', default=32, type=int)
+    arg_parser.add_argument('--n_block', default=12, type=int)
     arg_parser.add_argument('--local_rank', default=0)
 
     args = arg_parser.parse_args()
     return args
-
 
 def save_ds_chkpt(
     name,
