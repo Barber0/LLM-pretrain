@@ -34,10 +34,8 @@ def get_args():
 
     arg_parser.add_argument('--ds_cfg', default='./ds_cfg.json')
 
-    arg_parser.add_argument('--load_home', default=None)
-    arg_parser.add_argument('--save_home', default=None)
-
-    arg_parser.add_argument('--ckpt', default='/root/autodl-tmp/rope-llm')
+    arg_parser.add_argument('--load_path', default=None)
+    arg_parser.add_argument('--ckpt', default=None)
 
     arg_parser.add_argument('--data_name', default='openwebtext')
     arg_parser.add_argument(

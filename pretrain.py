@@ -6,7 +6,8 @@ from torch.utils.tensorboard import SummaryWriter
 
 from rope_model import LLM
 from data_loader2 import DataLoader
-from utils import build_logger, get_args, save_ds_chkpt, prepare_tokenizer
+from utils import build_logger, get_args, save_ds_chkpt, prepare_tokenizer, count_parameters
+from consts import *
 
 
 def run(args):
@@ -33,15 +34,22 @@ def run(args):
         max_len=args.max_len
     )
 
-    if args.load_home is not None:
-        load_model_path = f'{args.load_home}/{args.model_name}'
-        if os.path.exists(load_model_path):
-            base_model.load_state_dict(torch.load(load_model_path))
+    param_amount_b = count_parameters(base_model) * 1e-9
+    logger.info('Model parameter amount: %.6f B', param_amount_b)
 
-    model_eng = deepspeed.initialize(
+    if args.load_path is not None:
+        logger.info('Load model state: %s', args.load_path)
+        if os.path.exists(args.load_path):
+            ckpt = torch.load(args.load_path)
+            base_model.load_state_dict(ckpt[CKPT_MODEL_KEY])
+
+    model_eng, opt = deepspeed.initialize(
         model=base_model,
         config=args.ds_cfg
-    )[0]
+    )[:2]
+
+    if args.load_path is None and args.ckpt is not None:
+        model_eng.load_checkpoint(args.ckpt, args.model_name)
 
     writer = SummaryWriter(log_dir=args.log_path)
 
@@ -80,10 +88,17 @@ def run(args):
                 time_period = time() - stime
                 avg_ntokens = x_attn_mask.sum() / x_attn_mask.size(0)
                 pad_token_len = x_attn_mask.size(-1)
+
+                cur_lr = opt.param_groups[0]['lr']
                 logger.info(
-                    'ep: %d, batch: %d, time: %.2f, ntokens: %.2f/%d, loss: %f',
-                    ep, next_bidx, time_period, avg_ntokens, pad_token_len, period_loss/args.batch_period
+                    'ep: %d, batch: %d, time: %.2f, ntokens: %.2f/%d, loss: %f, lr: %f',
+                    ep, next_bidx, time_period, avg_ntokens, pad_token_len, period_loss/args.batch_period, cur_lr
                 )
+
+                try:
+                    writer.add_scalar('Learning Rate', cur_lr, bidx)
+                except Exception as e:
+                    logger.warn('batch: %d, tensorboard error: %s', bidx, e)
                 writer.flush()
 
                 if next_bidx >= args.save_period and next_bidx % args.save_period == 0:
