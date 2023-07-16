@@ -10,12 +10,12 @@
         }
     },
     "scheduler": {
-        "type": "LRRangeTest",
+        "type": "WarmupDecayLR",
         "params": {
-            "lr_range_test_min_lr": 0.0001,
-            "lr_range_test_step_size": 200,
-            "lr_range_test_step_rate": 5,
-            "lr_range_test_staircase": false
+            "total_num_steps": 100000,
+            "warmup_min_lr": 0.00007,
+            "warmup_max_lr": 0.00035,
+            "warmup_num_steps": 8000
         }
     },
     "fp16": {
