@@ -91,7 +91,7 @@ class RoPE_MHA(nn.Module):
         next_prefix_kv = torch.stack((k, v))
 
         q = apply_rotary(q,  freq_cis_q)
-        k = apply_rotary(q,  freq_cis_k)
+        k = apply_rotary(k,  freq_cis_k)
         attn_o = self.attn(q, k, v, mask).transpose(1, 2).contiguous()
 
         merged_shape = attn_o.shape[:-2] + (x.size(-1), )
