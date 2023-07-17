@@ -9,9 +9,9 @@ min_fp16 = torch.finfo(torch.float16).min
 def precompute_freqs_cis(dim: int, end: int, theta: float = 10000.0):
     freqs = 1.0 / (theta ** (torch.arange(0, dim, 2)
                    [: (dim // 2)].float() / dim))
-    t = torch.arange(end, device=freqs.device)  # type: ignore
-    freqs = torch.outer(t, freqs).float()  # type: ignore
-    freqs_cis = torch.polar(torch.ones_like(freqs), freqs)  # complex64
+    t = torch.arange(end, device=freqs.device)
+    freqs = torch.outer(t, freqs).float()
+    freqs_cis = torch.polar(torch.ones_like(freqs), freqs)
     return freqs_cis
 
 
@@ -66,11 +66,11 @@ class RoPE_MHA(nn.Module):
 
     def forward(
         self,
-            x,
-            mask,
-            freq_cis_q,
-            freq_cis_k,
-            prefix_kv,
+        x,
+        mask,
+        freq_cis_q,
+        freq_cis_k,
+        prefix_kv=None
     ):
 
         x_proj = self.proj(x)
@@ -134,7 +134,7 @@ class Block(nn.Module):
             mask,
             freq_cis_q,
             freq_cis_k,
-            prefix_kv,
+            prefix_kv=None
     ):
         attn_o, prefix_kv = self.attn(
             self.ln1(x), mask, freq_cis_q, freq_cis_k, prefix_kv)
@@ -143,49 +143,152 @@ class Block(nn.Module):
         return x, prefix_kv
 
 
+def prepare_freq_cis(
+    x: torch.Tensor,
+    base_freq_cis: torch.Tensor,
+    seq_start: int,
+    seq_end: int,
+):
+    seq_end = seq_start+x.size(-1)
+    freq_cis_k = base_freq_cis[:seq_end].to(x.device)
+    freq_cis_q = freq_cis_k if seq_start == 0 else base_freq_cis[
+        seq_start:seq_end].to(x.device)
+    return freq_cis_q, freq_cis_k
+
+
+def prepare_mask(
+    x: torch.Tensor,
+    base_mask: torch.Tensor,
+    seq_start: int,
+    seq_end: int
+):
+    mask = base_mask[..., seq_start:seq_end, :seq_end]
+    return mask.to(x.device)
+
+
+def process_prefix_kv_list(x, num_blocks, prefix_kv_list=None):
+    if prefix_kv_list is None:
+        seq_start = 0
+        prefix_kv_list = [None] * num_blocks
+    else:
+        seq_start = prefix_kv_list[0][0].size(-2)
+
+    seq_end = seq_start+x.size(-1)
+    return seq_start, seq_end, prefix_kv_list
+
+
+class LLM_Embeding(nn.Embedding):
+    def __init__(
+        self,
+        num_embeddings: int,
+        embedding_dim: int,
+        num_blocks: int,
+        base_freq_cis: torch.Tensor,
+        base_mask: torch.Tensor,
+    ):
+        super().__init__(num_embeddings, embedding_dim)
+        self._base_freq_cis = base_freq_cis
+        self._base_mask = base_mask
+        self._num_blocks = num_blocks
+
+    def forward_with_prefix(self, x, prefix_kv_list=None):
+        emb_out = super().forward(x)
+
+        seq_start, seq_end, prefix_kv_list = process_prefix_kv_list(
+            x,
+            self._num_blocks,
+            prefix_kv_list
+        )
+
+        freq_cis_q, freq_cis_k = prepare_freq_cis(
+            x,
+            self._base_freq_cis,
+            seq_start,
+            seq_end
+        )
+
+        mask = prepare_mask(
+            x,
+            self._base_mask,
+            seq_start,
+            seq_end
+        )
+
+        return emb_out, mask, freq_cis_q, freq_cis_k, prefix_kv_list
+
+    def forward(self, x):
+        return self.forward_with_prefix(x)[:-1]
+
+
+class SequentialBlock(Block):
+    def forward(self, ipt_tuple):
+        x, mask, freq_cis_q, freq_cis_k = ipt_tuple
+        out = super().forward(x, mask, freq_cis_q, freq_cis_k)[0]
+        return out, mask, freq_cis_q, freq_cis_k
+
+
+class SequentialLayerNorm(LayerNorm):
+    def forward(self, x):
+        return super().forward(x[0])
+
+
+def create_sequential_model(
+    vocab,
+    d_model=768,
+    num_head=12,
+    max_len=512,
+    ext_factor=2,
+    dropout=0.1,
+    num_blocks=12
+):
+    head_size = d_model//num_head
+    ext_seq_len = max_len*ext_factor
+
+    module_list = [
+        LLM_Embeding(vocab, d_model, num_blocks, precompute_freqs_cis(
+            head_size, ext_seq_len), create_mask(ext_seq_len))
+    ] + [
+        SequentialBlock(d_model, num_head, dropout)
+        for _ in range(num_blocks)
+    ] + [
+        SequentialLayerNorm(d_model),
+        nn.Linear(d_model, vocab, bias=False)
+    ]
+    return nn.Sequential(*module_list), len(module_list)
+
+
 class LLM(nn.Module):
-    def __init__(self, vocab, pad_token_id, d_model=768, num_head=12, max_len=512, ext_factor=2, dropout=0.1, num_block=12):
+    def __init__(self, vocab, pad_token_id, d_model=768, num_head=12, max_len=512, ext_factor=2, dropout=0.1, num_blocks=12):
         super(LLM, self).__init__()
 
         head_size = d_model//num_head
         ext_seq_len = max_len*ext_factor
-        self.freq_cis = precompute_freqs_cis(head_size, ext_seq_len)
-        self.mask = create_mask(ext_seq_len)
 
-        self.emb = nn.Embedding(vocab, d_model)
+        self.emb = LLM_Embeding(
+            vocab,
+            d_model,
+            num_blocks,
+            precompute_freqs_cis(head_size, ext_seq_len),
+            create_mask(ext_seq_len)
+        )
 
         self.blocks = nn.ModuleList([
             Block(d_model, num_head, dropout)
-            for _ in range(num_block)
+            for _ in range(num_blocks)
         ])
         self.ln = LayerNorm(d_model)
         self.decoder = nn.Linear(d_model, vocab, bias=False)
         self.loss_fn = nn.CrossEntropyLoss(ignore_index=pad_token_id)
 
     def raw(self, x, prefix_kv_list=None):
-        x_rep = self.emb(x)
-
-        if prefix_kv_list is None:
-            seq_start = 0
-            prefix_kv_list = [None] * len(self.blocks)
-        else:
-            seq_start = prefix_kv_list[0][0].size(-2)
-
-        seq_end = seq_start+x.size(-1)
-
-        freq_cis_k = self.freq_cis[:seq_end]
-        freq_cis_q = freq_cis_k if seq_start == 0 else self.freq_cis[seq_start:seq_end]
-        tmp_mask = self.mask[..., seq_start:seq_end, :seq_end]
-
-        freq_cis_k = freq_cis_k.to(x.device)
-        freq_cis_q = freq_cis_q.to(x.device)
-        tmp_mask = tmp_mask.to(x.device)
+        x_rep, mask, freq_cis_q, freq_cis_k, prefix_kv_list = \
+            self.emb.forward_with_prefix(x, prefix_kv_list)
 
         next_prefix_kv_list = []
         for layer, prefix_kv in zip(self.blocks, prefix_kv_list):
             x_rep, next_prefix_kv = layer.forward(
                 x_rep,
-                tmp_mask,
+                mask,
                 freq_cis_q,
                 freq_cis_k,
                 prefix_kv
@@ -204,5 +307,7 @@ class LLM(nn.Module):
             loss = self.loss_fn(
                 y_pred.contiguous().view(-1, y_pred.size(-1)),
                 y.contiguous().view(-1)
-            ) / num_micro_batch
+            )
+            if num_micro_batch > 1:
+                return loss / num_micro_batch
             return loss
