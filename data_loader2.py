@@ -16,6 +16,7 @@ def generate_random_sequence(n):
 
 def split_and_join(txt, max_len=1024, overlap_factor=4):
     segs = txt.split(' ')
+    segs.append(END_SIGN)
     if len(segs) > max_len:
         start_idx = 0
         out_list = []

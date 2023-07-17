@@ -21,7 +21,7 @@ def run(args):
         ds_name=args.data_name,
         ds_path=args.data_path,
         max_len=args.max_len,
-        overlap_factor=5,
+        overlap_factor=args.overlap_factor,
         batch_size=args.batch_size
     )
 
@@ -83,18 +83,17 @@ def run(args):
             except Exception as e:
                 logger.warn('batch: %d, tensorboard error: %s', bidx, e)
 
-            period_loss += loss
+            period_loss += loss.item()
 
             next_bidx = bidx + 1
             if next_bidx % args.batch_period == 0:
                 time_period = time() - stime
                 avg_ntokens = x_attn_mask.sum() / x_attn_mask.size(0)
-                pad_token_len = x_attn_mask.size(-1)
 
                 cur_lr = opt.param_groups[0]['lr']
                 logger.info(
-                    'ep: %d, batch: %d, time: %.2f, ntokens: %.2f/%d, loss: %f, lr: %f',
-                    ep, next_bidx, time_period, avg_ntokens, pad_token_len, period_loss /
+                    'ep: %d, batch: %d, time: %.2f, ntokens: %.2f, loss: %f, lr: %f',
+                    ep, next_bidx, time_period, avg_ntokens, period_loss /
                     args.batch_period, cur_lr
                 )
 
