@@ -1,13 +1,16 @@
 import torch
-import deepspeed
 import os
 from time import time
 from torch.utils.tensorboard import SummaryWriter
 
-from rope_model import LLM
+from rope_model import create_sequential_model
 from data_loader2 import DataLoader
-from utils import build_logger, get_args, save_ds_chkpt, prepare_tokenizer, count_parameters, load_model_chkpt
+from utils import (build_logger, get_args, save_model_chkpt, prepare_tokenizer,
+                   count_parameters, get_partition_balance, load_model_chkpt)
 from consts import *
+import fairscale.nn as fnn
+import torch.nn as nn
+from torch.cuda.amp import autocast, GradScaler
 
 
 def run(args):
@@ -25,35 +28,32 @@ def run(args):
         batch_size=args.batch_size
     )
 
-    base_model = LLM(
+    base_model,  num_layers = create_sequential_model(
         vocab=VOCAB_SIZE,
-        pad_token_id=tkn.pad_token_id,
         d_model=args.d_model,
         num_head=args.n_head,
         num_blocks=args.n_block,
         max_len=args.max_len
     )
 
-    param_amount_b = count_parameters(base_model) * 1e-9
+    balance = get_partition_balance(num_layers)
+
+    pipe_model = fnn.Pipe(
+        base_model,
+        balance
+    )
+
+    opt = torch.optim.AdamW(pipe_model.parameters(), lr=0.0001)
+    loss_fn = nn.CrossEntropyLoss(ignore_index=tkn.pad_token_id)
+
+    param_amount_b = count_parameters(pipe_model) * 1e-9
     logger.info('Model parameter amount: %.6f B', param_amount_b)
 
     if args.load_home is not None:
-        load_model_chkpt(
-            base_model,
-            None,
-            args,
-            logger
-        )
-
-    model_eng, opt = deepspeed.initialize(
-        model=base_model,
-        config=args.ds_cfg
-    )[:2]
-
-    if args.load_home is None and args.ckpt is not None and os.path.exists(args.ckpt):
-        model_eng.load_checkpoint(args.ckpt, args.model_name)
+        load_model_chkpt(pipe_model, opt, args, logger)
 
     writer = SummaryWriter(log_dir=args.log_path)
+    scaler = GradScaler()
 
     period_loss = 0
     stime = time()
@@ -71,12 +71,21 @@ def run(args):
             )
             base_ids, x_attn_mask = x_encoded['input_ids'], x_encoded['attention_mask']
 
-            input_ids = base_ids[..., :-1].cuda()
-            target_ids = base_ids[..., 1:].cuda()
+            ipt_device = pipe_model.devices[0]
+            input_ids = base_ids[..., :-1].to(ipt_device)
+            target_ids = base_ids[..., 1:].to(ipt_device)
 
-            loss = model_eng.forward(input_ids, target_ids)
-            model_eng.backward(loss)
-            model_eng.step()
+            with autocast(dtype=torch.float16):
+                y_pred = pipe_model.forward(input_ids)
+                loss = loss_fn(
+                    y_pred.to(ipt_device).contiguous(
+                    ).view(-1, y_pred.size(-1)),
+                    target_ids.contiguous().view(-1)
+                )
+            scaler.scale(loss).backward()
+            scaler.step(opt)
+            scaler.update()
+            opt.zero_grad()
 
             try:
                 writer.add_scalar('Train Loss', loss, bidx)
@@ -104,15 +113,26 @@ def run(args):
                     logger.warn('batch: %d, tensorboard error: %s', bidx, e)
                 writer.flush()
 
-                if next_bidx >= args.save_period and next_bidx % args.save_period == 0:
+                if next_bidx % args.save_period == 0:
                     os.makedirs(args.ckpt, exist_ok=True)
-                    save_ds_chkpt(str(next_bidx), model_eng,
-                                  args.ckpt, args.model_name)
+                    save_model_chkpt(
+                        str(next_bidx),
+                        pipe_model,
+                        opt,
+                        args.ckpt,
+                        logger
+                    )
 
                 period_loss = 0
                 stime = time()
 
-        save_ds_chkpt(f'ep-{ep}', model_eng, args.ckpt, args.model_name)
+        save_model_chkpt(
+            f'ep-{ep}',
+            pipe_model,
+            opt,
+            args.ckpt,
+            logger
+        )
 
 
 if __name__ == '__main__':

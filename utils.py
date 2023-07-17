@@ -34,7 +34,8 @@ def get_args():
 
     arg_parser.add_argument('--ds_cfg', default='./ds_cfg.json')
 
-    arg_parser.add_argument('--load_path', default=None)
+    arg_parser.add_argument('--load_home', default=None)
+    arg_parser.add_argument('--save_home', default=None)
     arg_parser.add_argument('--ckpt', default=None)
 
     arg_parser.add_argument('--data_name', default='openwebtext')
@@ -61,6 +62,7 @@ def get_args():
     args = arg_parser.parse_args()
     return args
 
+
 def save_ds_chkpt(
     name,
     model_eng,
@@ -71,7 +73,6 @@ def save_ds_chkpt(
     with open(f'{ckpt_path}/progress.txt', 'w') as f:
         f.write(name)
 
-
 def save_model_chkpt(
     bidx,
     model,
@@ -80,16 +81,47 @@ def save_model_chkpt(
     logger
 ):
     try:
-        if os.path.exists(args.save_home):
+        if args.save_home is not None and os.path.exists(args.save_home):
             torch.save(model.state_dict(),
                        f'{args.save_home}/{args.model_name}.pt')
             torch.save(opt.state_dict(),
                        f'{args.save_home}/opt-{args.model_name}.pt')
 
-            with open(f'./progress.txt', 'w') as f:
+            with open(f'{args.save_home}/progress.txt', 'w') as f:
                 f.write(str(bidx))
     except Exception as ex:
         logger.warn('batch: %d, save state failed: %s', bidx, ex)
+
+
+def load_model_chkpt(
+    model,
+    opt,
+    args,
+    logger
+):
+    try:
+        model_path = f'{args.load_home}/{args.model_name}.pt'
+        if os.path.exists(model_path):
+            ckpt = torch.load(model_path)
+            if CKPT_MODEL_KEY in ckpt:
+                model.load_state_dict(ckpt[CKPT_MODEL_KEY])
+            else:
+                model.load_state_dict(ckpt)
+            logger.info('Load model state: %s', model_path)
+        else:
+            logger.warn('Model state not found: %s', model_path)
+
+        if opt is None:
+            return
+        opt_path = f'{args.load_home}/opt-{args.model_name}.pt'
+        if os.path.exists(opt_path):
+            ckpt = torch.load(opt_path)
+            opt.load_state_dict(ckpt)
+            logger.info('Load optimizer state: %s', opt_path)
+        else:
+            logger.warn('Optimizer state not found: %s', opt_path)
+    except Exception as ex:
+        logger.warn('Load state failed: %s', ex)
 
 
 def prepare_tokenizer(tkn_path, added_tokens=[END_SIGN]):
@@ -98,3 +130,11 @@ def prepare_tokenizer(tkn_path, added_tokens=[END_SIGN]):
     tkn.add_tokens(added_tokens)
     VOCAB_SIZE = tkn.vocab_size + len(added_tokens)
     return tkn, VOCAB_SIZE
+
+
+def get_partition_balance(num_layers):
+    partitions = torch.cuda.device_count()
+    avg_num_layers = num_layers//partitions
+    balance = [avg_num_layers for _ in range(partitions)]
+    balance[-1] += num_layers % partitions
+    return balance
