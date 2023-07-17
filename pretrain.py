@@ -6,7 +6,7 @@ from torch.utils.tensorboard import SummaryWriter
 
 from rope_model import LLM
 from data_loader2 import DataLoader
-from utils import build_logger, get_args, save_ds_chkpt, prepare_tokenizer, count_parameters
+from utils import build_logger, get_args, save_ds_chkpt, prepare_tokenizer, count_parameters, load_model_chkpt
 from consts import *
 
 
@@ -21,7 +21,7 @@ def run(args):
         ds_name=args.data_name,
         ds_path=args.data_path,
         max_len=args.max_len,
-        overlap_factor=5,
+        overlap_factor=args.overlap_factor,
         batch_size=args.batch_size
     )
 
@@ -30,25 +30,27 @@ def run(args):
         pad_token_id=tkn.pad_token_id,
         d_model=args.d_model,
         num_head=args.n_head,
-        num_block=args.n_block,
+        num_blocks=args.n_block,
         max_len=args.max_len
     )
 
     param_amount_b = count_parameters(base_model) * 1e-9
     logger.info('Model parameter amount: %.6f B', param_amount_b)
 
-    if args.load_path is not None:
-        logger.info('Load model state: %s', args.load_path)
-        if os.path.exists(args.load_path):
-            ckpt = torch.load(args.load_path)
-            base_model.load_state_dict(ckpt[CKPT_MODEL_KEY])
+    if args.load_home is not None:
+        load_model_chkpt(
+            base_model,
+            None,
+            args,
+            logger
+        )
 
     model_eng, opt = deepspeed.initialize(
         model=base_model,
         config=args.ds_cfg
     )[:2]
 
-    if args.load_path is None and args.ckpt is not None and os.path.exists(args.ckpt):
+    if args.load_home is None and args.ckpt is not None and os.path.exists(args.ckpt):
         model_eng.load_checkpoint(args.ckpt, args.model_name)
 
     writer = SummaryWriter(log_dir=args.log_path)
@@ -81,18 +83,18 @@ def run(args):
             except Exception as e:
                 logger.warn('batch: %d, tensorboard error: %s', bidx, e)
 
-            period_loss += loss
+            period_loss += loss.item()
 
             next_bidx = bidx + 1
             if next_bidx % args.batch_period == 0:
                 time_period = time() - stime
                 avg_ntokens = x_attn_mask.sum() / x_attn_mask.size(0)
-                pad_token_len = x_attn_mask.size(-1)
 
                 cur_lr = opt.param_groups[0]['lr']
                 logger.info(
-                    'ep: %d, batch: %d, time: %.2f, ntokens: %.2f/%d, loss: %f, lr: %f',
-                    ep, next_bidx, time_period, avg_ntokens, pad_token_len, period_loss/args.batch_period, cur_lr
+                    'ep: %d, batch: %d, time: %.2f, ntokens: %.2f, loss: %f, lr: %f',
+                    ep, next_bidx, time_period, avg_ntokens, period_loss /
+                    args.batch_period, cur_lr
                 )
 
                 try:
