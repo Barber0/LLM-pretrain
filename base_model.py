@@ -2,6 +2,7 @@ import math
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+from flash_attn import flash_attn_qkvpacked_func
 
 min_fp16 = torch.finfo(torch.float16).min
 
@@ -29,6 +30,7 @@ class MultiAttn(nn.Module):
 
         self.register_buffer('mask', self.create_mask(max_len))
 
+        self.dropout_val = dropout
         self.dropout = nn.Dropout(dropout)
         self.proj = nn.Linear(d_model, d_model * 3)
         self.ff = nn.Linear(d_model, d_model)
@@ -38,26 +40,31 @@ class MultiAttn(nn.Module):
 
     def forward(self, x, prefix_kv=None):
         x_proj = self.proj(x)
-        proj_shape = x_proj.shape[:-1] + (self.num_head, self.head_size * 3)
-        x_proj = x_proj.contiguous().view(proj_shape).transpose(1, 2)
 
-        assert x_proj.size(1) == self.num_head
-        assert x_proj.size(2) == x.size(1)
-        assert x_proj.size(3) == self.head_size * 3
+        if prefix_kv is None:
+            proj_shape = x_proj.shape[:-1] + (3, self.num_head, self.head_size)
+            x_proj = x_proj.contiguous().view(proj_shape)
+            attn_o = flash_attn_qkvpacked_func(x_proj, self.dropout_val,causal=True)
+        else:
+            proj_shape = x_proj.shape[:-1] + (self.num_head, self.head_size * 3)
+            x_proj = x_proj.contiguous().view(proj_shape).transpose(1, 2)
 
-        q, k, v = x_proj.split(self.head_size, dim=-1)
+            assert x_proj.size(1) == self.num_head
+            assert x_proj.size(2) == x.size(1)
+            assert x_proj.size(3) == self.head_size * 3
 
-        if prefix_kv is not None:
+            q, k, v = x_proj.split(self.head_size, dim=-1)
+
             pk, pv = prefix_kv
             k = torch.cat((pk, k), dim=-2)
             v = torch.cat((pv, v), dim=-2)
 
-        next_prefix_kv = torch.stack((k, v))
+            next_prefix_kv = torch.stack((k, v))
 
-        attn_o = self.attn(q, k, v)
-        attn_o = attn_o.\
-            transpose(1, 2).\
-            contiguous()
+            attn_o = self.attn(q, k, v)
+            attn_o = attn_o.\
+                transpose(1, 2).\
+                contiguous()
 
         merged_shape = attn_o.shape[:-2] + (x.size(-1), )
         attn_o = attn_o.view(merged_shape)

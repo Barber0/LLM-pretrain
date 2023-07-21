@@ -4,7 +4,8 @@ import os
 from time import time
 from torch.utils.tensorboard import SummaryWriter
 
-from rope_model import LLM
+# from rope_model import LLM
+from base_model import MyModel
 from data_loader2 import DataLoader
 from utils import build_logger, get_args, save_ds_chkpt, prepare_tokenizer, count_parameters, load_model_chkpt
 from consts import *
@@ -25,12 +26,12 @@ def run(args):
         batch_size=args.batch_size
     )
 
-    base_model = LLM(
+    base_model = MyModel(
         vocab=VOCAB_SIZE,
         pad_token_id=tkn.pad_token_id,
         d_model=args.d_model,
         num_head=args.n_head,
-        num_blocks=args.n_block,
+        num_block=args.n_block,
         max_len=args.max_len
     )
 

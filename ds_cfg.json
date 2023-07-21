@@ -1,7 +1,7 @@
 {
-    "train_batch_size": 60,
+    "train_batch_size": 30,
     "gradient_accumulation_steps": 5,
-    "train_micro_batch_size_per_gpu": 12,
+    "train_micro_batch_size_per_gpu": 6,
     "optimizer": {
         "type": "AdamW",
         "params": {
@@ -22,6 +22,9 @@
         "enabled": true
     },
     "zero_optimization": {
-        "stage": 1
+        "stage": 3,
+        "offload_optimizer": {
+            "device": "cpu"
+        }
     }
 }

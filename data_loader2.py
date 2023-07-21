@@ -1,6 +1,7 @@
 from datasets import load_from_disk
 import random
 from consts import *
+from torch.utils.data import Dataset
 
 ds_handlers_map = {
     'openwebtext': lambda line: line['text'],
@@ -55,3 +56,8 @@ def DataLoader(ds_name, ds_path, max_len, overlap_factor, batch_size=5):
                     yield out
 
     return _iter
+
+
+class BaseDataset(Dataset):
+    def __init__(self, ds_name, ds_path, max_len):
+        super().__init__()
