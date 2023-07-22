@@ -87,6 +87,9 @@ def run(args):
             period_loss += loss.item()
 
             next_bidx = bidx + 1
+            if next_bidx % args.flush_period == 0:
+                deepspeed.get_accelerator().empty_cache()
+            
             if next_bidx % args.batch_period == 0:
                 time_period = time() - stime
                 avg_ntokens = x_attn_mask.sum() / x_attn_mask.size(0)

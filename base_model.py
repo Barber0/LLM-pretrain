@@ -41,6 +41,7 @@ class MultiAttn(nn.Module):
     def forward(self, x, prefix_kv=None):
         x_proj = self.proj(x)
 
+        next_prefix_kv = None
         if prefix_kv is None:
             proj_shape = x_proj.shape[:-1] + (3, self.num_head, self.head_size)
             x_proj = x_proj.contiguous().view(proj_shape)

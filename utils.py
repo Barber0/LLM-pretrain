@@ -48,6 +48,7 @@ def get_args():
 
     arg_parser.add_argument('--start_batch', default=0, type=int)
     arg_parser.add_argument('--batch_period', default=20, type=int)
+    arg_parser.add_argument('--flush_period', default=20, type=int)
     arg_parser.add_argument('--save_period', default=500, type=int)
     arg_parser.add_argument('--overlap_factor', default=6, type=int)
 
