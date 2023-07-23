@@ -5,7 +5,7 @@ from time import time
 from torch.utils.tensorboard import SummaryWriter
 
 # from rope_model import LLM
-from base_model import MyModel
+from base_model2 import MyModel
 from data_loader2 import DataLoader
 from utils import build_logger, get_args, save_ds_chkpt, prepare_tokenizer, count_parameters, load_model_chkpt
 from consts import *
@@ -87,8 +87,8 @@ def run(args):
             period_loss += loss.item()
 
             next_bidx = bidx + 1
-            if next_bidx % args.flush_period == 0:
-                deepspeed.get_accelerator().empty_cache()
+            # if next_bidx % args.flush_period == 0:
+            #     deepspeed.get_accelerator().empty_cache()
             
             if next_bidx % args.batch_period == 0:
                 time_period = time() - stime

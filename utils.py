@@ -2,7 +2,7 @@ import logging
 from argparse import ArgumentParser
 import os
 import torch
-from transformers import GPT2Tokenizer
+from transformers import AutoTokenizer
 from consts import *
 
 
@@ -127,11 +127,13 @@ def load_model_chkpt(
         logger.warn('Load state failed: %s', ex)
 
 
-def prepare_tokenizer(tkn_path, added_tokens=[END_SIGN]):
-    tkn = GPT2Tokenizer.from_pretrained(tkn_path)
-    tkn.pad_token = '[PAD]'
-    tkn.add_tokens(added_tokens)
-    VOCAB_SIZE = tkn.vocab_size + len(added_tokens)
+def prepare_tokenizer(tkn_path):
+    tkn = AutoTokenizer.from_pretrained(tkn_path)
+    # tkn = GPT2Tokenizer.from_pretrained(tkn_path)
+    # tkn.pad_token = '[PAD]'
+    # tkn.add_tokens(added_tokens)
+    # VOCAB_SIZE = tkn.vocab_size + len(added_tokens)
+    VOCAB_SIZE = tkn.vocab_size
     return tkn, VOCAB_SIZE
 
 
