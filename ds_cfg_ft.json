@@ -1,0 +1,29 @@
+{
+    "train_batch_size": 100,
+    "gradient_accumulation_steps": 5,
+    "train_micro_batch_size_per_gpu": 20,
+    "optimizer": {
+        "type": "AdamW",
+        "params": {
+            "lr": 0.00007,
+            "weight_decay": 0.01
+        }
+    },
+    "scheduler": {
+        "type": "WarmupDecayLR",
+        "params": {
+            "total_num_steps": 50000,
+            "warmup_min_lr": 0.00007,
+            "warmup_max_lr": 0.00026,
+            "warmup_num_steps": 2200
+        }
+    },
+    "fp16": {
+        "enabled": true
+    },
+    "zero_optimization": {
+        "stage": 1,
+        "contiguous_gradients": true,
+        "reduce_bucket_size": 1e7
+    }
+}

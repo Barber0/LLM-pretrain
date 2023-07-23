@@ -3,11 +3,22 @@ import random
 from consts import *
 from torch.utils.data import Dataset
 
-ds_handlers_map = {
-    'openwebtext': lambda line: line['text'],
-    'self_instruct': lambda line: f'''{line['prompt']} {line['completion']} {END_SIGN}'''
-}
+def prepare_conversation(data, tkn):
+    conversation = data['conversation']
+    utterances = []
+    for x in conversation:
+        utterances.append(x['human'])
+        utterances.append(x['assistant'])
 
+    utterances.append('')
+    tmp_txt = f' {tkn.eos_token} '.join(utterances)
+    return tmp_txt
+
+ds_handlers_map = {
+    'openwebtext': lambda line, tkn: line['text'],
+    'self_instruct': lambda line, tkn: f'''{line['prompt']} {line['completion']} {tkn.eos_token}''',
+    'ultrachat': prepare_conversation,
+}
 
 def generate_random_sequence(n):
     seq = list(range(n))
@@ -34,7 +45,7 @@ def split_and_join(txt, max_len=1024, overlap_factor=4):
     return [txt]
 
 
-def DataLoader(ds_name, ds_path, max_len, overlap_factor, batch_size=5):
+def DataLoader(ds_name, ds_path, max_len, tokenizer, overlap_factor=0, batch_size=5):
     data = load_from_disk(ds_path)['train']
     idx_list = generate_random_sequence(data.num_rows)
     preprocess = ds_handlers_map[ds_name]
@@ -43,11 +54,17 @@ def DataLoader(ds_name, ds_path, max_len, overlap_factor, batch_size=5):
         batch = []
         for idx in idx_list:
             v = data[idx]
-            chunk = split_and_join(
-                preprocess(v),
-                max_len=max_len,
-                overlap_factor=overlap_factor
-            )
+            
+            processed = preprocess(v, tokenizer)
+            if overlap_factor > 0:
+                chunk = split_and_join(
+                    processed,
+                    max_len=max_len,
+                    overlap_factor=overlap_factor
+                )
+            else:
+                chunk = [processed]
+                
             for line in chunk:
                 batch.append(line)
                 if len(batch) >= batch_size:

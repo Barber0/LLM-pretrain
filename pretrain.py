@@ -22,6 +22,7 @@ def run(args):
         ds_name=args.data_name,
         ds_path=args.data_path,
         max_len=args.max_len,
+        tokenizer=tkn,
         overlap_factor=args.overlap_factor,
         batch_size=args.batch_size
     )
