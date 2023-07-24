@@ -17,15 +17,8 @@ def precompute_freqs_cis(dim: int, end: int, theta: float = 10000.0):
     assert freqs_cis.shape == (end, complex_dim)
     return freqs_cis
 
-
-def reshape_as_broadcast(freq_cis, x):
-    assert freq_cis.shape[-2:] == x.shape[-2:]
-    return freq_cis.view(1, 1, x.shape[2], x.shape[3])
-
-
-def reshape_as_broadcast2(freq_cis, x, seq_len_dim_idx=2, head_dim_idx=3):
-    assert freq_cis.size(seq_len_dim_idx) == x.size(seq_len_dim_idx)
-    assert freq_cis.size(head_dim_idx) == x.size(head_dim_idx)
+def reshape_as_broadcast(freq_cis, x, seq_len_dim_idx, head_dim_idx):
+    assert freq_cis.shape == (x.size(seq_len_dim_idx), x.size(head_dim_idx))
     target_dims = (seq_len_dim_idx, head_dim_idx)
     out_shape = [v if i in target_dims else 1 for i, v in enumerate(x.shape)]
     return freq_cis.view(*out_shape)
@@ -39,9 +32,9 @@ def complex_to_real(x):
     return torch.view_as_real(x).flatten(flat_idx)
 
 
-def apply_rotary(x, freq_cis):
+def apply_rotary(x, freq_cis, seq_len_dim_idx=2, head_dim_idx=3):
     x_ = real_to_complex(x)
-    freq_cis = reshape_as_broadcast(freq_cis, x_)
+    freq_cis = reshape_as_broadcast(freq_cis, x_, seq_len_dim_idx, head_dim_idx)
     return complex_to_real(freq_cis * x_).type_as(x)
 
 
@@ -89,34 +82,47 @@ class RoPE_MHA(nn.Module):
         x_proj = x_proj.contiguous().view(proj_shape)
         assert x_proj.ndim == 5
         
-        x_proj = x_proj.permute(2, 0, 3, 1, 4)
-        assert x_proj.shape == (
-            3,
-            x.size(0),
-            self.num_head,
-            x.size(1),
-            self.head_size
-        )
-        q, k, v = x_proj
-
         next_prefix_kv = None
-        if prefix_kv is not None:
-            pk, pv = prefix_kv
-            k = torch.cat((pk, k), dim=-2)
-            v = torch.cat((pv, v), dim=-2)
 
         if mask is None:
-            q = apply_rotary(q,  freq_cis_q)
-            k = apply_rotary(k,  freq_cis_k)
+            x_proj = x_proj.permute(2, 0, 1, 3, 4)
+            assert x_proj.shape == (
+                3,
+                x.size(0),
+                x.size(1),
+                self.num_head,
+                self.head_size
+            )
+            q, k, v = x_proj
+
+            q = apply_rotary(q,  freq_cis_q, 1, 3)
+            k = apply_rotary(k,  freq_cis_k, 1, 3)
+
             attn_o = flash_attn_func(
-                q.transpose(1, 2).contiguous(),
-                k.transpose(1, 2).contiguous(),
-                v.transpose(1, 2).contiguous(),
+                q,
+                k,
+                v,
                 dropout_p=self.dropout_val, 
                 causal=True
             )
         else:
+            x_proj = x_proj.permute(2, 0, 3, 1, 4)
+            assert x_proj.shape == (
+                3,
+                x.size(0),
+                self.num_head,
+                x.size(1),
+                self.head_size
+            )
+            q, k, v = x_proj
+
+            if prefix_kv is not None:
+                pk, pv = prefix_kv
+                k = torch.cat((pk, k), dim=-2)
+                v = torch.cat((pv, v), dim=-2)
+
             next_prefix_kv = torch.stack((k, v))
+
             q = apply_rotary(q,  freq_cis_q)
             k = apply_rotary(k,  freq_cis_k)
             attn_o = self.attn(q, k, v, mask).transpose(1, 2).contiguous()
@@ -198,7 +204,6 @@ def process_prefix_kv_list(x, num_blocks, prefix_kv_list=None):
         seq_start = 0
         prefix_kv_list = [None] * num_blocks
     else:
-        print('--------------------------', len(prefix_kv_list), sum([1  if it is None else 0 for it in prefix_kv_list]))
         seq_start = prefix_kv_list[0][0].size(-2)
 
     seq_end = seq_start+x.size(-1)
