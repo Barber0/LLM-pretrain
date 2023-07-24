@@ -40,7 +40,11 @@ class MultiAttn(nn.Module):
         if prefix_kv is None and mask is None:
             proj_shape = x_proj.shape[:-1] + (3, self.num_head, self.head_size)
             x_proj = x_proj.contiguous().view(proj_shape)
-            attn_o = flash_attn_qkvpacked_func(x_proj, self.dropout_val, causal=True)
+            attn_o = flash_attn_qkvpacked_func(
+                qkv=x_proj, 
+                dropout_p=self.dropout_val, 
+                causal=True
+            )
         else:
             # (batch_size, seq_len, 3, num_head, head_size)
             proj_shape = x_proj.shape[:-1] + (3, self.num_head, self.head_size)
@@ -75,8 +79,6 @@ class MultiAttn(nn.Module):
 
     def attn(self, q, k, v, mask):
         scores = q.matmul(k.transpose(-2, -1)) / self.head_scale
-
-        tmp_len, seq_len = scores.shape[-2:]
         scores = scores.masked_fill(mask == 0, min_fp16)
 
         scores = F.softmax(scores, dim=-1)
