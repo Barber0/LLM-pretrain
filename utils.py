@@ -41,6 +41,7 @@ def get_args():
     arg_parser.add_argument('--data_name', default='openwebtext')
     arg_parser.add_argument(
         '--data_path', default='/root/autodl-tmp/content/drive/MyDrive/webtext-datasets/arch/')
+    arg_parser.add_argument('--data_vendor', default='hf')
 
     arg_parser.add_argument('--tkn_path', default='./tokenizer')
     arg_parser.add_argument('--log_path', default='/root/tf-logs')

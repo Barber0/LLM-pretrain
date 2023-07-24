@@ -2,6 +2,7 @@ import math
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+from flash_attn import flash_attn_func
 
 min_fp16 = torch.finfo(torch.float16).min
 
@@ -60,6 +61,7 @@ class RoPE_MHA(nn.Module):
         self.head_size = d_model // num_head
         self.head_scale = math.sqrt(self.head_size)
 
+        self.dropout_val = dropout
         self.dropout = nn.Dropout(dropout)
         self.proj = nn.Linear(d_model, d_model * 3)
         self.ff = nn.Linear(d_model, d_model)
@@ -67,32 +69,41 @@ class RoPE_MHA(nn.Module):
     def forward(
         self,
         x,
-        mask,
         freq_cis_q,
         freq_cis_k,
+        mask=None,
         prefix_kv=None
     ):
 
         x_proj = self.proj(x)
-        proj_shape = x_proj.shape[:-1] + (self.num_head, self.head_size * 3)
-        x_proj = x_proj.contiguous().view(proj_shape).transpose(1, 2)
+        proj_shape = x_proj.shape[:-1] + (3, self.num_head, self.head_size)
+        x_proj = x_proj.contiguous().view(proj_shape).permute(2, 0, 3, 1, 4)
 
-        assert x_proj.size(1) == self.num_head
-        assert x_proj.size(2) == x.size(1)
-        assert x_proj.size(3) == self.head_size * 3
+        assert x_proj.ndim == 5
+        assert x_proj.shape == (
+            3,
+            x.size(0),
+            self.num_head,
+            x.size(1),
+            self.head_size
+        )
+        
+        q, k, v = x_proj
 
-        q, k, v = x_proj.split(self.head_size, dim=-1)
-
-        if prefix_kv is not None:
+        next_prefix_kv = None
+        if mask is not None and prefix_kv is not None:
             pk, pv = prefix_kv
             k = torch.cat((pk, k), dim=-2)
             v = torch.cat((pv, v), dim=-2)
-
-        next_prefix_kv = torch.stack((k, v))
+            next_prefix_kv = torch.stack((k, v))
 
         q = apply_rotary(q,  freq_cis_q)
         k = apply_rotary(k,  freq_cis_k)
-        attn_o = self.attn(q, k, v, mask).transpose(1, 2).contiguous()
+        
+        if mask is None:
+            attn_o = flash_attn_func(q, k, v, self.dropout_val, causal=True)
+        else:
+            attn_o = self.attn(q, k, v, mask).transpose(1, 2).contiguous()
 
         merged_shape = attn_o.shape[:-2] + (x.size(-1), )
         attn_o = attn_o.view(merged_shape)
@@ -131,13 +142,13 @@ class Block(nn.Module):
     def forward(
             self,
             x,
-            mask,
             freq_cis_q,
             freq_cis_k,
+            mask=None,
             prefix_kv=None
     ):
         attn_o, prefix_kv = self.attn(
-            self.ln1(x), mask, freq_cis_q, freq_cis_k, prefix_kv)
+            self.ln1(x), freq_cis_q, freq_cis_k, mask, prefix_kv)
         x = x + attn_o
         x = x + self.mlp(self.ln2(x))
         return x, prefix_kv
@@ -191,7 +202,7 @@ class LLM_Embeding(nn.Embedding):
         self._base_mask = base_mask
         self._num_blocks = num_blocks
 
-    def forward_with_prefix(self, x, prefix_kv_list=None):
+    def forward_with_prefix(self, x, generate=False, prefix_kv_list=None):
         emb_out = super().forward(x)
 
         seq_start, seq_end, prefix_kv_list = process_prefix_kv_list(
@@ -207,14 +218,16 @@ class LLM_Embeding(nn.Embedding):
             seq_end
         )
 
-        mask = prepare_mask(
-            x,
-            self._base_mask,
-            seq_start,
-            seq_end
-        )
+        mask = None
+        if generate:
+            mask = prepare_mask(
+                x,
+                self._base_mask,
+                seq_start,
+                seq_end
+            )
 
-        return emb_out, mask, freq_cis_q, freq_cis_k, prefix_kv_list
+        return emb_out, freq_cis_q, freq_cis_k, mask, prefix_kv_list
 
     def forward(self, x):
         return self.forward_with_prefix(x)[:-1]
@@ -222,7 +235,7 @@ class LLM_Embeding(nn.Embedding):
 
 class SequentialBlock(Block):
     def forward(self, ipt_tuple):
-        x, mask, freq_cis_q, freq_cis_k = ipt_tuple
+        x, freq_cis_q, freq_cis_k, mask = ipt_tuple
         out = super().forward(x, mask, freq_cis_q, freq_cis_k)[0]
         return out, mask, freq_cis_q, freq_cis_k
 
@@ -280,17 +293,17 @@ class LLM(nn.Module):
         self.decoder = nn.Linear(d_model, vocab, bias=False)
         self.loss_fn = nn.CrossEntropyLoss(ignore_index=pad_token_id)
 
-    def raw(self, x, prefix_kv_list=None):
-        x_rep, mask, freq_cis_q, freq_cis_k, prefix_kv_list = \
-            self.emb.forward_with_prefix(x, prefix_kv_list)
+    def raw(self, x, generate=False, prefix_kv_list=None):
+        x_rep, freq_cis_q, freq_cis_k, mask, prefix_kv_list = \
+            self.emb.forward_with_prefix(x, generate, prefix_kv_list)
 
         next_prefix_kv_list = []
         for layer, prefix_kv in zip(self.blocks, prefix_kv_list):
             x_rep, next_prefix_kv = layer.forward(
                 x_rep,
-                mask,
                 freq_cis_q,
                 freq_cis_k,
+                mask,
                 prefix_kv
             )
             next_prefix_kv_list.append(next_prefix_kv)
@@ -298,8 +311,8 @@ class LLM(nn.Module):
         x_rep = self.ln(x_rep)
         return x_rep, next_prefix_kv_list
 
-    def forward(self, x, y=None, prefix_kv_list=None, num_micro_batch=1):
-        x_rep, next_prefix_kv_list = self.raw(x, prefix_kv_list)
+    def forward(self, x, y=None, generate=False, prefix_kv_list=None, num_micro_batch=1):
+        x_rep, next_prefix_kv_list = self.raw(x, generate, prefix_kv_list)
         y_pred = self.decoder(x_rep)
         if y is None:
             return y_pred, next_prefix_kv_list

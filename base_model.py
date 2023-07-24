@@ -40,19 +40,21 @@ class MultiAttn(nn.Module):
         if prefix_kv is None and mask is None:
             proj_shape = x_proj.shape[:-1] + (3, self.num_head, self.head_size)
             x_proj = x_proj.contiguous().view(proj_shape)
-            attn_o = flash_attn_qkvpacked_func(x_proj, self.dropout_val,causal=True)
+            attn_o = flash_attn_qkvpacked_func(x_proj, self.dropout_val, causal=True)
         else:
-            proj_shape = x_proj.shape[:-1] + (3, self.num_head, self.head_size)
             # (batch_size, seq_len, 3, num_head, head_size)
-            
+            proj_shape = x_proj.shape[:-1] + (3, self.num_head, self.head_size)
             # (3, batch_size, num_head, seq_len, head_size)
             x_proj = x_proj.contiguous().view(proj_shape).permute(2, 0, 3, 1, 4)
 
-            assert x_proj.size(0) == 3
-            assert x_proj.size(1) == x.size(0)
-            assert x_proj.size(2) == self.num_head
-            assert x_proj.size(3) == x.size(1)
-            assert x_proj.size(4) == self.head_size
+            assert x_proj.ndim == 5
+            assert x_proj.shape == (
+                3,
+                x.size(0),
+                self.num_head,
+                x.size(1),
+                self.head_size
+            )
 
             q, k, v = x_proj
 
@@ -63,10 +65,7 @@ class MultiAttn(nn.Module):
 
             next_prefix_kv = torch.stack((k, v))
 
-            attn_o = self.attn(q, k, v, mask)
-            attn_o = attn_o.\
-                transpose(1, 2).\
-                contiguous()
+            attn_o = self.attn(q, k, v, mask).transpose(1, 2).contiguous()
 
         merged_shape = attn_o.shape[:-2] + (x.size(-1), )
         attn_o = attn_o.view(merged_shape)

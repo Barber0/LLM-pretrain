@@ -1,9 +1,10 @@
-from datasets import load_from_disk
 import random
 from consts import *
 from torch.utils.data import Dataset
 
-def prepare_conversation(data, tkn):
+line_sep_max_limit = 5
+
+def prepare_conversation_for_ultrachat(data, tkn):
     conversation = data['conversation']
     utterances = []
     for x in conversation:
@@ -14,11 +15,43 @@ def prepare_conversation(data, tkn):
     tmp_txt = f' {tkn.eos_token} '.join(utterances)
     return tmp_txt
 
+def get_rand_rep_str(s, start=0, end=line_sep_max_limit):
+    return s * random.randint(start, end)
+
+def prepare_qa_for_alpaca(line, tkn):
+    txt_input = line['input']
+    if txt_input is None:
+        txt_input = line['instruction']
+    else:
+        txt_input = line['instruction'] + get_rand_rep_str('\n', 1) + txt_input
+    txt_output = line['output']
+    return f'{txt_input} {tkn.eos_token} {txt_output} {tkn.eos_token}'
+
 ds_handlers_map = {
     'openwebtext': lambda line, tkn: line['text'],
     'self_instruct': lambda line, tkn: f'''{line['prompt']} {line['completion']} {tkn.eos_token}''',
-    'ultrachat': prepare_conversation,
+    'ultrachat': prepare_conversation_for_ultrachat,
+    'alpaca': prepare_qa_for_alpaca
 }
+
+def load_from_ms(ds_path):
+    from modelscope.msdatasets import MsDataset
+    from modelscope.utils.constant import DownloadMode
+    data = MsDataset.load(ds_path)
+    idx_list = generate_random_sequence(len(data))
+    return data, idx_list
+
+def load_from_hf(ds_path):
+    from datasets import load_from_disk
+    data = load_from_disk(ds_path)['train']
+    idx_list = generate_random_sequence(data.num_rows)
+    return data, idx_list
+
+data_vendor_map = {
+    'hf': load_from_hf,
+    'ms': load_from_ms
+}
+
 
 def generate_random_sequence(n):
     seq = list(range(n))
@@ -45,9 +78,8 @@ def split_and_join(txt, max_len=1024, overlap_factor=4):
     return [txt]
 
 
-def DataLoader(ds_name, ds_path, max_len, tokenizer, overlap_factor=0, batch_size=5):
-    data = load_from_disk(ds_path)['train']
-    idx_list = generate_random_sequence(data.num_rows)
+def DataLoader(ds_name, ds_path, max_len, tokenizer, data_vendor='hf', overlap_factor=0, batch_size=5):
+    data, idx_list = data_vendor_map[data_vendor](ds_path)
     preprocess = ds_handlers_map[ds_name]
 
     def _iter():

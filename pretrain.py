@@ -5,7 +5,7 @@ from time import time
 from torch.utils.tensorboard import SummaryWriter
 
 # from rope_model import LLM
-from base_model2 import MyModel
+from base_model import MyModel
 from data_loader2 import DataLoader
 from utils import build_logger, get_args, save_ds_chkpt, prepare_tokenizer, count_parameters, load_model_chkpt
 from consts import *
@@ -24,7 +24,8 @@ def run(args):
         max_len=args.max_len,
         tokenizer=tkn,
         overlap_factor=args.overlap_factor,
-        batch_size=args.batch_size
+        batch_size=args.batch_size,
+        data_vendor=args.data_vendor
     )
 
     base_model = MyModel(
