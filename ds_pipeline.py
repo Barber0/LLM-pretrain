@@ -4,13 +4,14 @@ from time import time
 from torch.utils.tensorboard import SummaryWriter
 
 from rope_model import create_sequential_model
-# from data_loader2 import DataLoader
+
+from deepspeed.pipe import PipelineModule
+
 from data_loader3 import EfficientTextDataset
 from torch.utils.data import DataLoader
 from utils import (build_logger, get_args, save_model_chkpt, prepare_tokenizer,
                    count_parameters, get_partition_balance, load_model_chkpt)
 from consts import *
-import fairscale.nn as fnn
 import torch.nn as nn
 from torch.cuda.amp import autocast, GradScaler
 import json
@@ -52,10 +53,7 @@ def run(args):
 
     balance = get_partition_balance(num_layers)
 
-    pipe_model = fnn.Pipe(
-        base_model,
-        balance
-    )
+    pipe_model = PipelineModule(layers=net, num_stages=2)
 
     opt = torch.optim.AdamW(pipe_model.parameters(), lr=2e-4)
     loss_fn = nn.CrossEntropyLoss(ignore_index=tkn.pad_token_id)

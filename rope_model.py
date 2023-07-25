@@ -258,8 +258,8 @@ class LLM_Embeding(nn.Embedding):
 class SequentialBlock(Block):
     def forward(self, ipt_tuple):
         x, freq_cis_q, freq_cis_k, mask = ipt_tuple
-        out = super().forward(x, mask, freq_cis_q, freq_cis_k)[0]
-        return out, mask, freq_cis_q, freq_cis_k
+        out = super().forward(x, freq_cis_q, freq_cis_k)[0]
+        return out, freq_cis_q, freq_cis_k, mask
 
 
 class SequentialLayerNorm(LayerNorm):
