@@ -17,11 +17,13 @@ def precompute_freqs_cis(dim: int, end: int, theta: float = 10000.0):
     assert freqs_cis.shape == (end, complex_dim)
     return freqs_cis
 
+
 def reshape_as_broadcast(freq_cis, x, seq_len_dim_idx, head_dim_idx):
     assert freq_cis.shape == (x.size(seq_len_dim_idx), x.size(head_dim_idx))
     target_dims = (seq_len_dim_idx, head_dim_idx)
     out_shape = [v if i in target_dims else 1 for i, v in enumerate(x.shape)]
     return freq_cis.view(*out_shape)
+
 
 def real_to_complex(x):
     return torch.view_as_complex(x.reshape(*x.shape[:-1], -1, 2))
@@ -34,7 +36,8 @@ def complex_to_real(x):
 
 def apply_rotary(x, freq_cis, seq_len_dim_idx=2, head_dim_idx=3):
     x_ = real_to_complex(x)
-    freq_cis = reshape_as_broadcast(freq_cis, x_, seq_len_dim_idx, head_dim_idx)
+    freq_cis = reshape_as_broadcast(
+        freq_cis, x_, seq_len_dim_idx, head_dim_idx)
     return complex_to_real(freq_cis * x_).type_as(x)
 
 
@@ -81,7 +84,7 @@ class RoPE_MHA(nn.Module):
         proj_shape = x_proj.shape[:-1] + (3, self.num_head, self.head_size)
         x_proj = x_proj.contiguous().view(proj_shape)
         assert x_proj.ndim == 5
-        
+
         next_prefix_kv = None
 
         if mask is None:
@@ -102,7 +105,7 @@ class RoPE_MHA(nn.Module):
                 q,
                 k,
                 v,
-                dropout_p=self.dropout_val, 
+                dropout_p=self.dropout_val,
                 causal=True
             )
         else:
@@ -252,14 +255,14 @@ class LLM_Embeding(nn.Embedding):
         return emb_out, freq_cis_q, freq_cis_k, mask, prefix_kv_list
 
     def forward(self, x):
-        return self.forward_with_prefix(x)[:-1]
+        return self.forward_with_prefix(x)[:3]
 
 
 class SequentialBlock(Block):
     def forward(self, ipt_tuple):
-        x, freq_cis_q, freq_cis_k, mask = ipt_tuple
+        x, freq_cis_q, freq_cis_k = ipt_tuple
         out = super().forward(x, freq_cis_q, freq_cis_k)[0]
-        return out, freq_cis_q, freq_cis_k, mask
+        return out, freq_cis_q, freq_cis_k
 
 
 class SequentialLayerNorm(LayerNorm):

@@ -1,6 +1,6 @@
 {
     "gradient_accumulation_steps": 5,
-    "train_micro_batch_size_per_gpu": 20,
+    "train_micro_batch_size_per_gpu": 15,
     "optimizer": {
         "type": "AdamW",
         "params": {

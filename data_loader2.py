@@ -1,6 +1,5 @@
 import random
 from consts import *
-from torch.utils.data import Dataset
 
 line_sep_max_limit = 5
 
@@ -36,7 +35,6 @@ ds_handlers_map = {
 
 def load_from_ms(ds_path):
     from modelscope.msdatasets import MsDataset
-    from modelscope.utils.constant import DownloadMode
     data = MsDataset.load(ds_path)
     idx_list = generate_random_sequence(len(data))
     return data, idx_list
@@ -107,6 +105,40 @@ def DataLoader(ds_name, ds_path, max_len, tokenizer, data_vendor='hf', overlap_f
     return _iter
 
 
-class BaseDataset(Dataset):
-    def __init__(self, ds_name, ds_path, max_len):
-        super().__init__()
+def DataTensorLoader(ds_name, ds_path, max_len, tokenizer, data_vendor='hf', overlap_factor=0, batch_size=5):
+    data, idx_list = data_vendor_map[data_vendor](ds_path)
+    preprocess = ds_handlers_map[ds_name]
+
+    def _iter():
+        batch = []
+        for idx in idx_list:
+            v = data[idx]
+            
+            processed = preprocess(v, tokenizer)
+            if overlap_factor > 0:
+                chunk = split_and_join(
+                    processed,
+                    max_len=max_len,
+                    overlap_factor=overlap_factor
+                )
+            else:
+                chunk = [processed]
+                
+            for line in chunk:
+                batch.append(line)
+                if len(batch) >= batch_size:
+                    out = batch
+                    batch = []
+
+                    base_ids = tokenizer.batch_encode_plus(
+                        out,
+                        max_length=max_len + 1,
+                        padding=True,
+                        truncation=True,
+                        return_tensors='pt'
+                    ).input_ids
+                    input_ids = base_ids[..., :-1]
+                    target_ids = base_ids[..., 1:]
+                    yield input_ids, target_ids
+
+    return _iter

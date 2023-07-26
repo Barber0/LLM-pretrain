@@ -1,8 +1,7 @@
-import torch
 from torch.utils.data import Dataset
 import pickle
 import os
-import json
+
 
 class EfficientTextDataset(Dataset):
     def __init__(self, file_path, line_handler=lambda x: x):
@@ -11,7 +10,7 @@ class EfficientTextDataset(Dataset):
 
         self.file_path = file_path
         offsets_file = file_path + '.offsets.pkl'
-        
+
         if os.path.exists(offsets_file):
             # Load the precomputed offsets
             with open(offsets_file, 'rb') as f:
@@ -39,3 +38,20 @@ class EfficientTextDataset(Dataset):
             file.seek(self.offsets[index])  # Jump directly to the position
             line = file.readline().strip()
         return self.line_handler(line)
+
+
+def get_batch_collater(tkn, max_len):
+    tkn_len = max_len+1
+
+    def batch_collator(batch):
+        base_ids = tkn.batch_encode_plus(
+            batch,
+            max_length=tkn_len,
+            padding=True,
+            truncation=True,
+            return_tensors='pt'
+        ).input_ids
+        input_ids = base_ids[..., :-1]
+        target_ids = base_ids[..., 1:]
+        return input_ids, target_ids
+    return batch_collator

@@ -32,7 +32,7 @@ class MultiAttn(nn.Module):
         self.dropout = nn.Dropout(dropout)
         self.proj = nn.Linear(d_model, d_model * 3)
         self.ff = nn.Linear(d_model, d_model)
-        
+
     def forward(self, x, prefix_kv=None, mask=None):
         x_proj = self.proj(x)
 
@@ -41,8 +41,8 @@ class MultiAttn(nn.Module):
             proj_shape = x_proj.shape[:-1] + (3, self.num_head, self.head_size)
             x_proj = x_proj.contiguous().view(proj_shape)
             attn_o = flash_attn_qkvpacked_func(
-                qkv=x_proj, 
-                dropout_p=self.dropout_val, 
+                qkv=x_proj,
+                dropout_p=self.dropout_val,
                 causal=True
             )
         else:
@@ -105,33 +105,57 @@ class Block(nn.Module):
         self.ln2 = LayerNorm(d_model)
         self.mlp = MLP(d_model, d_model * 4)
 
-    def forward(self, x, prefix_kv=None, mask=None):
+    def forward_with_prefix(self, x, prefix_kv=None, mask=None):
         attn_o, prefix_kv = self.attn(self.ln1(x), prefix_kv, mask)
         x = x + attn_o
         x = x + self.mlp(self.ln2(x))
         return x, prefix_kv
 
+    def forward(self, x):
+        return self.forward_with_prefix(x)[0]
 
-class MyModel(nn.Module):
-    def __init__(self, vocab, pad_token_id, d_model=768, num_head=12, max_len=512, dropout=0.1, num_block=12):
-        super(MyModel, self).__init__()
+
+class PositionEmbedding(nn.Embedding):
+    def forward(self, x, seq_start=0, seq_end=None):
+        assert x.ndim == 3
+        if seq_end is None:
+            seq_end = seq_start + x.size(1)
+        pos_ids = torch.arange(seq_start, seq_end, device=x.device)
+        pos_ids = pos_ids.unsqueeze(0).expand(x.size(0), -1)
+        pos_o = super().forward(pos_ids)
+        return x + pos_o
+
+
+class LossWrapper(nn.CrossEntropyLoss):
+    def forward(self, y_pred, target):
+        return super().forward(
+            y_pred.contiguous().view(-1, y_pred.size(-1)),
+            target.contiguous().view(-1)
+        )
+
+
+class LLM(nn.Module):
+    def __init__(self, vocab, pad_token_id, d_model=768, num_head=12, max_len=512, dropout=0.1, num_blocks=12):
+        super(LLM, self).__init__()
         self.emb = nn.Embedding(vocab, d_model)
-        self.pos = nn.Embedding(max_len, d_model)
+        self.pos = PositionEmbedding(max_len, d_model)
         self.mask = self.create_mask(max_len)
 
         self.blocks = nn.ModuleList([
             Block(d_model, num_head, max_len, dropout)
-            for _ in range(num_block)
+            for _ in range(num_blocks)
         ])
         self.ln = LayerNorm(d_model)
         self.decoder = nn.Linear(d_model, vocab, bias=False)
-        self.loss_fn = nn.CrossEntropyLoss(ignore_index=pad_token_id)
-        
+        self.loss_fn = LossWrapper(ignore_index=pad_token_id)
+
     @staticmethod
     def create_mask(mask_size):
         return 1 - torch.triu(torch.ones((1, 1, mask_size, mask_size)), diagonal=1)
 
     def raw(self, x, prefix_kv_list=None, generate=False):
+        emb_o = self.emb(x)
+
         if prefix_kv_list is None:
             seq_start = 0
             prefix_kv_list = [None] * len(self.blocks)
@@ -139,21 +163,17 @@ class MyModel(nn.Module):
             seq_start = prefix_kv_list[0][0].size(-2)
 
         seq_end = seq_start + x.size(-1)
-        pos_ids = torch.arange(seq_start, seq_end, device=x.device)
-        pos_ids = pos_ids.unsqueeze(0).expand_as(x)
 
-        emb_o = self.emb(x)
-        pos_o = self.pos(pos_ids)
+        x_rep = self.pos(emb_o, seq_start, seq_end)
 
-        x_rep = emb_o + pos_o
-        
         mask = None
         if generate:
             mask = self.mask[..., seq_start:seq_end, :seq_end].to(x_rep.device)
 
         next_prefix_kv_list = []
         for layer, prefix_kv in zip(self.blocks, prefix_kv_list):
-            x_rep, next_prefix_kv = layer(x_rep, prefix_kv, mask)
+            x_rep, next_prefix_kv = layer.forward_with_prefix(
+                x_rep, prefix_kv, mask)
             next_prefix_kv_list.append(next_prefix_kv)
 
         x_rep = self.ln(x_rep)
@@ -165,8 +185,15 @@ class MyModel(nn.Module):
         if y is None:
             return y_pred, next_prefix_kv_list
         else:
-            loss = self.loss_fn(
-                y_pred.contiguous().view(-1, y_pred.size(-1)),
-                y.contiguous().view(-1)
-            )
+            loss = self.loss_fn(y_pred, y)
             return loss
+
+    def pipeline(self):
+        module_list = [
+            self.emb,
+            self.pos
+        ] + [block for block in self.blocks] + [
+            self.ln,
+            self.decoder
+        ]
+        return nn.Sequential(*module_list), self.loss_fn

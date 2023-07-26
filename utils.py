@@ -61,6 +61,7 @@ def get_args():
     arg_parser.add_argument('--n_head', default=32, type=int)
     arg_parser.add_argument('--n_block', default=12, type=int)
     arg_parser.add_argument('--local_rank', default=0)
+    arg_parser.add_argument('--world_size', default=1, type=int)
 
     args = arg_parser.parse_args()
     return args

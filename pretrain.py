@@ -1,14 +1,16 @@
-import torch
 import deepspeed
 import os
 from time import time
 from torch.utils.tensorboard import SummaryWriter
+import math
 
-from rope_model import LLM
-# from base_model import MyModel
-from data_loader2 import DataLoader
+from base_model import LLM
+from data_loader3 import EfficientTextDataset
+from deepspeed.utils import RepeatingLoader
+
 from utils import build_logger, get_args, save_ds_chkpt, prepare_tokenizer, count_parameters, load_model_chkpt
 from consts import *
+import json
 
 
 def run(args):
@@ -18,15 +20,6 @@ def run(args):
     )
 
     tkn, VOCAB_SIZE = prepare_tokenizer(args.tkn_path)
-    data_loader = DataLoader(
-        ds_name=args.data_name,
-        ds_path=args.data_path,
-        max_len=args.max_len,
-        tokenizer=tkn,
-        overlap_factor=args.overlap_factor,
-        batch_size=args.batch_size,
-        data_vendor=args.data_vendor
-    )
 
     base_model = LLM(
         vocab=VOCAB_SIZE,
@@ -48,10 +41,16 @@ def run(args):
             logger
         )
 
-    model_eng, opt = deepspeed.initialize(
+    dataset = EfficientTextDataset(args.data_path, json.loads)
+    model_eng, opt, base_data_loader = deepspeed.initialize(
         model=base_model,
-        config=args.ds_cfg
-    )[:2]
+        config=args.ds_cfg,
+        training_data=dataset
+    )[:3]
+    micro_batch_num = math.ceil(len(dataset)/base_data_loader.batch_size)
+
+    rep_data_loader = RepeatingLoader(base_data_loader)
+    data_iter = iter(rep_data_loader)
 
     if args.load_home is None and args.ckpt is not None and os.path.exists(args.ckpt):
         model_eng.load_checkpoint(args.ckpt, args.model_name)
@@ -61,12 +60,13 @@ def run(args):
     period_loss = 0
     stime = time()
     for ep in range(args.epochs):
-        for bidx, batch in enumerate(data_loader()):
+        for bidx in range(micro_batch_num):
+            batch = next(data_iter)
             if bidx < args.start_batch:
                 continue
 
             x_encoded = tkn.batch_encode_plus(
-                batch,
+                batch['text'],
                 max_length=args.max_len + 1,
                 padding=True,
                 truncation=True,
@@ -89,9 +89,6 @@ def run(args):
             period_loss += loss.item()
 
             next_bidx = bidx + 1
-            # if next_bidx % args.flush_period == 0:
-            #     deepspeed.get_accelerator().empty_cache()
-            
             if next_bidx % args.batch_period == 0:
                 time_period = time() - stime
                 avg_ntokens = x_attn_mask.sum() / x_attn_mask.size(0)
