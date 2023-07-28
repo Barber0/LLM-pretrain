@@ -13,6 +13,19 @@ from utils import build_logger, get_args, save_ds_chkpt, prepare_tokenizer, coun
 from consts import *
 import json
 
+import random
+import numpy as np
+import torch
+
+def set_random_seed(seed):
+    random.seed(seed)
+    np.random.seed(seed)
+    torch.manual_seed(seed)
+    torch.cuda.manual_seed_all(seed)
+
+seed = 168
+set_random_seed(seed)
+
 
 def run(args):
     logger = build_logger(
@@ -57,10 +70,11 @@ def run(args):
         dataset=EfficientTextDataset(
             args.data_path, lambda line: json.loads(line)['text']),
         batch_size=model_eng.micro_batch_size,
-        shuffle=False,
+        shuffle=True,
         num_workers=32,
         collate_fn=get_batch_collater(tkn, args.max_len)
     )
+    micro_batch_num = len(base_loader)
     rep_loader = RepeatingLoader(base_loader)
     data_iter = iter(rep_loader)
 
@@ -76,8 +90,7 @@ def run(args):
     period_loss = 0
     stime = time()
 
-    bidx = 0
-    while True:
+    for bidx in range(micro_batch_num):
         if bidx < args.start_batch:
             continue
 
@@ -114,9 +127,7 @@ def run(args):
             period_loss = 0
             stime = time()
 
-        bidx = next_bidx
-
-    # save_ds_chkpt(f'ep-{ep}', model_eng, args.ckpt, args.model_name)
+    save_ds_chkpt(f'ep-{ep}', model_eng, args.ckpt, args.model_name)
 
 
 if __name__ == '__main__':

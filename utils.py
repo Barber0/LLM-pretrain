@@ -31,17 +31,19 @@ def build_logger(
 def get_args():
     arg_parser = ArgumentParser()
     arg_parser.add_argument('--model_name', default='myllm4-model')
+    arg_parser.add_argument('--tag_name', default='main')
 
     arg_parser.add_argument('--ds_cfg', default='./ds_cfg.json')
 
     arg_parser.add_argument('--load_home', default=None)
-    arg_parser.add_argument('--save_home', default=None)
+    arg_parser.add_argument('--save_home', default='/root/autodl-tmp/model-arch')
     arg_parser.add_argument('--ckpt', default=None)
 
     arg_parser.add_argument('--data_name', default='openwebtext')
     arg_parser.add_argument(
         '--data_path', default='/root/autodl-tmp/content/drive/MyDrive/webtext-datasets/arch/')
     arg_parser.add_argument('--data_vendor', default='hf')
+    arg_parser.add_argument('--loader_workers', default=32, type=int)
 
     arg_parser.add_argument('--tkn_path', default='./tokenizer')
     arg_parser.add_argument('--log_path', default='/root/tf-logs')
@@ -51,6 +53,7 @@ def get_args():
     arg_parser.add_argument('--batch_period', default=20, type=int)
     arg_parser.add_argument('--flush_period', default=20, type=int)
     arg_parser.add_argument('--save_period', default=500, type=int)
+    arg_parser.add_argument('--model_save_period', default=3000, type=int)
     arg_parser.add_argument('--overlap_factor', default=6, type=int)
 
     arg_parser.add_argument('--epochs', default=2, type=int)
@@ -145,3 +148,8 @@ def get_partition_balance(num_layers):
     balance = [avg_num_layers for _ in range(partitions)]
     balance[-1] += num_layers % partitions
     return balance
+
+def save_model_in_fp16(model_eng, save_home, model_name, bidx):
+    state_dict = model_eng.module.state_dict()
+    state_dict_fp16 = {k: v.half() for k, v in state_dict.items()}
+    torch.save(state_dict_fp16, f'{save_home}/{model_name}-{bidx}.pt')

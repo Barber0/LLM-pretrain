@@ -35,7 +35,7 @@ def complex_to_real(x):
 
 
 def apply_rotary(x, freq_cis, seq_len_dim_idx=2, head_dim_idx=3):
-    x_ = real_to_complex(x)
+    x_ = real_to_complex(x.float())
     freq_cis = reshape_as_broadcast(
         freq_cis, x_, seq_len_dim_idx, head_dim_idx)
     return complex_to_real(freq_cis * x_).type_as(x)

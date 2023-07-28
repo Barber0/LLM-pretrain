@@ -2,20 +2,49 @@ import deepspeed
 import os
 from time import time
 from torch.utils.tensorboard import SummaryWriter
-import math
 
 from rope_model import LLM
 from datasets import load_from_disk
 from deepspeed.utils import RepeatingLoader
-from torch.utils.data import DataLoader
 
-from utils import build_logger, get_args, save_ds_chkpt, prepare_tokenizer, count_parameters, load_model_chkpt, save_model_in_fp16
+from utils import build_logger, get_args, save_ds_chkpt, prepare_tokenizer, count_parameters, load_model_chkpt
 from consts import *
-import json
 
 import random
 import numpy as np
 import torch
+
+import signal
+
+class TimeoutException(Exception):
+    pass
+
+def timeout(seconds):
+    def decorator(func):
+        def _handle_timeout(signum, frame):
+            raise TimeoutException("Function call timed out")
+
+        def wrapper(*args, **kwargs):
+            signal.signal(signal.SIGALRM, _handle_timeout)
+            signal.alarm(seconds)
+            try:
+                result = func(*args, **kwargs)
+            finally:
+                signal.alarm(0)
+            return result
+        return wrapper
+    return decorator
+
+@timeout(9)
+def train_step(
+    model_eng,
+    input_ids, 
+    target_ids
+):
+    loss = model_eng.forward(input_ids, target_ids)
+    model_eng.backward(loss)
+    model_eng.step()
+    return loss
 
 def set_random_seed(seed):
     random.seed(seed)
@@ -70,98 +99,86 @@ def run(args):
     data_iter = iter(rep_data_loader)
 
     if args.load_home is None and args.ckpt is not None and os.path.exists(args.ckpt):
-        model_eng.load_checkpoint(args.ckpt, args.tag_name)
+        model_eng.load_checkpoint(args.ckpt, args.model_name)
 
     writer = SummaryWriter(log_dir=args.log_path)
 
-    period_prop_time = 0
-    period_loss = 0
-    period_ntokens = 0
+    period_prop_time_list = []
+    period_load_time_list = []
+    period_loss_list = []
     stime = time()
     for ep in range(args.epochs):
         for bidx in range(micro_batch_num):
+            load_start = time()
             batch = next(data_iter)
+            load_time = time() - load_start
             if bidx < args.start_batch:
                 continue
 
+            period_load_time_list.append(load_time)
             x_encoded = tkn.batch_encode_plus(
                 batch['text'],
-                max_length=args.max_len * 2 + 1,
-                padding='max_length',
+                max_length=args.max_len + 1,
+                padding=True,
                 truncation=True,
                 return_tensors='pt'
             )
             base_ids, x_attn_mask = x_encoded['input_ids'], x_encoded['attention_mask']
-            batch_avg_ntokens = x_attn_mask.sum() / x_attn_mask.size(0)
-            period_ntokens += batch_avg_ntokens
-
 
             input_ids = base_ids[..., :-1].to(model_eng.device)
             target_ids = base_ids[..., 1:].to(model_eng.device)
 
-            prop_start = time()
-            try:
-                loss = model_eng.forward(input_ids, target_ids)
-                model_eng.backward(loss)
-                model_eng.step()
-            except Exception as ex:
-                logger.warn('Model propagate failed: %s', ex)
-                continue
-            finally:
-                prop_time = time() - prop_start
-                period_prop_time += prop_time
-
-            if args.local_rank == 0:
-                try:
-                    writer.add_scalar('Train Loss', loss, bidx)
-                except Exception as e:
-                    logger.warn('batch: %d, tensorboard error: %s', bidx, e)
-
-            period_loss += loss.item()
-
             next_bidx = bidx + 1
+            try:
+                prop_start = time()
+                loss = train_step(model_eng, input_ids, target_ids)
+                prop_time = time() - prop_start
+                period_prop_time_list.append(prop_time)
+            except TimeoutException:
+                logger.warn('ep: %d, batch: %d, train step timeout, jump to next batch.',
+                             ep, next_bidx)
+                model_eng.zero_grad()
+                continue
+
+            try:
+                writer.add_scalar('Train Loss', loss, bidx)
+            except Exception as e:
+                logger.warn('batch: %d, tensorboard error: %s', bidx, e)
+
+            period_loss_list.append(loss.item())
+
             if next_bidx % args.batch_period == 0:
                 time_period = time() - stime
+                avg_ntokens = x_attn_mask.sum() / x_attn_mask.size(0)
 
-                avg_ntokens = period_ntokens / args.batch_period
-                avg_loss = period_loss / args.batch_period
-                avg_prop_time = period_prop_time / args.batch_period
+                avg_loss = sum(period_loss_list) / len(period_loss_list)
+                avg_load_time = sum(period_load_time_list) / len(period_load_time_list)
+                avg_prop_time = sum(period_prop_time_list) / len(period_prop_time_list)
                 cur_lr = opt.param_groups[0]['lr']
                 logger.info(
-                    'ep: %d, batch: %d, local_rank: %d, time: %.2f, model: %.2fs,' + \
+                    'ep: %d, batch: %d, local_rank: %d, time: %.2f, load_data: %.2fs, model: %.2fs,' + \
                     ' ntokens: %.2f, loss: %f, lr: %f',
-                    ep, next_bidx, args.local_rank, time_period, avg_prop_time, 
+                    ep, next_bidx, args.local_rank, time_period, avg_load_time, avg_prop_time, 
                     avg_ntokens, avg_loss, cur_lr
                 )
 
-                if args.local_rank == 0:
-                    try:
-                        writer.add_scalar('Learning Rate', cur_lr, bidx)
-                    except Exception as e:
-                        logger.warn('batch: %d, tensorboard error: %s', bidx, e)
-                    writer.flush()
+                try:
+                    writer.add_scalar('Learning Rate', cur_lr, bidx)
+                except Exception as e:
+                    logger.warn('batch: %d, tensorboard error: %s', bidx, e)
+                writer.flush()
 
                 if next_bidx % args.save_period == 0:
                     os.makedirs(args.ckpt, exist_ok=True)
                     save_ds_chkpt(str(next_bidx), model_eng,
-                                  args.ckpt, args.tag_name)
-                    
-                if args.local_rank == 0 and next_bidx % args.model_save_period == 0:
-                    os.makedirs(args.save_home, exist_ok=True)
-                    save_model_in_fp16(
-                        model_eng,
-                        args.save_home,
-                        args.model_name,
-                        next_bidx
-                    )
-                    
+                                  args.ckpt, args.model_name)
 
-                period_ntokens = 0
-                period_prop_time = 0
-                period_loss = 0
+                period_prop_time_list = []
+                period_load_time_list = []
+                period_loss_list = []
                 stime = time()
 
-        save_ds_chkpt(f'ep-{ep}', model_eng, args.ckpt, args.tag_name)
+        save_ds_chkpt(f'ep-{ep}', model_eng, args.ckpt, args.model_name)
 
 
 if __name__ == '__main__':
