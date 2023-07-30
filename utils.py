@@ -2,7 +2,7 @@ import logging
 from argparse import ArgumentParser
 
 from transformers import AutoTokenizer
-from dataclasses import asdict
+from dataclasses import asdict, fields
 from data_obj import ModelArgs, TrainArgs, ProgramArgs
 
 
@@ -35,11 +35,15 @@ def add_arguments_from_dataclass(
 ):
     dataclass_dict = asdict(dataclass_instance)
     for key, value in dataclass_dict.items():
-        parser.add_argument(f'--{key}', type=type(value), default=value)
+        val_type = str if value is None else type(value)
+        parser.add_argument(f'--{key}', type=val_type, default=value)
 
 
 def parse_to_dataclass(dataclass_type, args):
-    return dataclass_type(**vars(args))
+    args_dict = vars(args)
+    dataclass_fields = {field.name: field.type for field in fields(dataclass_type)}
+    filtered_args_dict = {key: value for key, value in args_dict.items() if key in dataclass_fields}
+    return dataclass_type(**filtered_args_dict)
 
 
 def get_args():

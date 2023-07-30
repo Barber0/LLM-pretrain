@@ -21,9 +21,10 @@ class TrainArgs:
     
     replicate_period: int = 3000
 
-    ckpt_home: str = None
+    deepspeed_ckpt_home: str = None
     deepspeed_ckpt_tag: str = None
 
+    torch_ckpt_home: str = None
     torch_ckpt_tag: str = None
     torch_ckpt_opt_prefix: str = 'optim'
     

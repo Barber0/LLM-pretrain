@@ -27,7 +27,7 @@ def compute_loss_fn(
     y: torch.Tensor,
     grad_accum_period,
 ):
-    return eng.forward(x, y, generate=True)
+    return eng.forward(x, y)
 
 def update_param_fn(
     bidx: int,
@@ -44,7 +44,10 @@ def main(
     model_args: ModelArgs,
     train_args: TrainArgs
 ):
-    logger = build_logger(prog_args.log_path)
+    logger = build_logger(
+        train_args.deepspeed_ckpt_tag,
+        prog_args.log_path,
+    )
     tkn, VOCAB_SIZE = prepare_tokenizer(prog_args.tokenizer_path)
     base_model = LLM(
         vocab=VOCAB_SIZE,
@@ -56,6 +59,8 @@ def main(
         dropout=model_args.dropout,
         num_blocks=model_args.n_layers
     )
+    param_num = count_parameters(base_model) * 1e-9
+    logger.info('Model parameters: %d B', param_num)
 
     if train_args.torch_ckpt_tag is not None:
         SFTrainer.load_ckpt(
@@ -119,4 +124,9 @@ def main(
     
 
 if __name__ == '__main__':
-    main(**get_args())
+    prog_args, model_args, train_args = get_args()
+    main(
+        prog_args=prog_args, 
+        model_args=model_args, 
+        train_args=train_args,
+    )

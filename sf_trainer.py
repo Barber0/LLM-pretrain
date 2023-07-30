@@ -16,7 +16,7 @@ class SFTrainer:
     def __init__(
         self,
         train_args: TrainArgs,
-        model: Union[DeepSpeedEngine, Module],
+        model: ModelType,
         opt: Optimizer,
         train_loader: DataLoader,
         validate_loader: DataLoader,
@@ -42,46 +42,51 @@ class SFTrainer:
     @staticmethod
     def load_ckpt(
         args: TrainArgs, 
-        model: Union[DeepSpeedEngine, Module], 
+        model: ModelType, 
         opt: Optimizer,
         logger: Logger
     ):
-        if not os.path.exists(args.ckpt_home):
-            logger.error('Checkpoint home not found: %s', args.ckpt_home)
-            raise Exception(f'Checkpoint home not found: %s', 
-                            args.ckpt_home)
-        
-        if args.torch_ckpt_tag is not None:
-            assert isinstance(model, Module)
-            model_path = f'{args.ckpt_home}/{args.torch_ckpt_tag}.pt'
-            if os.path.exists(model_path):
-                ckpt = torch.load(model_path)
-                if args.deepspeed_module_key in ckpt:
-                    model.load_state_dict(ckpt[args.deepspeed_module_key])
-                else:
-                    model.load_state_dict(ckpt)
+        if isinstance(model, Module):
+            if not os.path.exists(args.torch_ckpt_home):
+                logger.error('Checkpoint home not found: %s', args.torch_ckpt_home)
+                raise Exception(f'Checkpoint home not found: %s', 
+                                args.torch_ckpt_home)
+            
+            if args.torch_ckpt_tag is not None:
+                assert isinstance(model, Module)
+                model_path = f'{args.torch_ckpt_home}/{args.torch_ckpt_tag}.pt'
+                if os.path.exists(model_path):
+                    ckpt = torch.load(model_path)
+                    if args.deepspeed_module_key in ckpt:
+                        model.load_state_dict(ckpt[args.deepspeed_module_key])
+                    else:
+                        model.load_state_dict(ckpt)
 
-                logger.info('Model loaded: %s', model_path)
-            else:
-                logger.warn('Model not found: %s', model_path)
-
-            if opt is not None:
-                opt_path = f'{args.ckpt_home}/{args.torch_ckpt_opt_prefix}-{args.torch_ckpt_tag}.pt'
-                if os.path.exists(opt_path):
-                    ckpt = torch.load(opt_path)
-                    opt.load_state_dict(ckpt)
-                    logger.info('Optimizer loaded: %s', opt_path)
+                    logger.info('Model loaded: %s', model_path)
                 else:
-                    logger.warn('Optimizer not found: %s', model_path)
-        elif args.deepspeed_ckpt_tag is not None:
-            assert isinstance(model, DeepSpeedEngine)
-            model.load_checkpoint(args.ckpt_home, args.deepspeed_ckpt_tag)
+                    logger.warn('Model not found: %s', model_path)
+
+                if opt is not None:
+                    opt_path = f'{args.torch_ckpt_home}/{args.torch_ckpt_opt_prefix}-{args.torch_ckpt_tag}.pt'
+                    if os.path.exists(opt_path):
+                        ckpt = torch.load(opt_path)
+                        opt.load_state_dict(ckpt)
+                        logger.info('Optimizer loaded: %s', opt_path)
+                    else:
+                        logger.warn('Optimizer not found: %s', model_path)
+
+        elif isinstance(model, DeepSpeedEngine):
+            if not os.path.exists(args.deepspeed_ckpt_home):
+                logger.error('Checkpoint home not found: %s', args.deepspeed_ckpt_home)
+                raise Exception(f'Checkpoint home not found: %s', 
+                                args.deepspeed_ckpt_home)
+            model.load_checkpoint(args.deepspeed_ckpt_home, args.deepspeed_ckpt_tag)
 
 
     def get_next_validate_batch(self):
         if self._validate_iter is None:
             self._validate_iter = iter(self.validate_loader)
-
+            
         try:
             batch = next(self._validate_iter)
         except StopIteration:
@@ -185,33 +190,37 @@ class SFTrainer:
             ep, bidx, avg_calc_time, 
             avg_loss, cur_lr
         )
-        self.escape_from_exception(
-            ep,
-            bidx, 
-            lambda: self.tb_writer.add_scalar(
-                'Learning Rate', cur_lr, bidx)
-        )
-        self.tb_writer.flush()
+
+        if self.args.local_rank == 0:
+            self.escape_from_exception(
+                ep,
+                bidx, 
+                lambda: self.tb_writer.add_scalar(
+                    'Learning Rate', cur_lr, bidx)
+            )
+            self.tb_writer.flush()
 
 
     def save_model_in_fp16(self, ep, bidx):
         if isinstance(self.model, DeepSpeedEngine):
             state_dict = self.model.module.state_dict()
+            ckpt_home = self.args.deepspeed_ckpt_home
         elif isinstance(self.model, Module):
             state_dict = self.model.state_dict()
+            ckpt_home = self.args.torch_ckpt_home
         else:
             raise Exception(f'Unsupported model type: {type(self.model)}')
         
         state_dict_fp16 = {k: v.half() for k, v in state_dict.items()}
-        os.makedirs(self.args.ckpt_home, exist_ok=True)
-        save_path = f'{self.args.ckpt_home}/{self.args.ckpt_name}-{ep}_{bidx}.pt'
+        os.makedirs(ckpt_home, exist_ok=True)
+        save_path = f'{ckpt_home}/{self.args.deepspeed_ckpt_tag}-{ep}_{bidx}.pt'
         torch.save(state_dict_fp16, save_path)
 
 
     def save_optimizer(self, ep, bidx):
         state_dict = self.opt.state_dict()
-        os.makedirs(self.args.ckpt_home, exist_ok=True)
-        save_path = f'{self.args.ckpt_home}/opt-{self.args.ckpt_name}-{ep}_{bidx}.pt'
+        os.makedirs(self.args.torch_ckpt_home, exist_ok=True)
+        save_path = f'{self.args.torch_ckpt_home}/opt-{self.args.torch_ckpt_tag}-{ep}_{bidx}.pt'
         torch.save(state_dict, save_path)
 
 
@@ -221,16 +230,16 @@ class SFTrainer:
                 lambda: self.save_model_in_fp16(ep, bidx))
             self.escape_from_exception(ep, bidx,
                 lambda: self.save_optimizer(ep, bidx))
-        elif isinstance(self.module, DeepSpeedEngine):
+        elif isinstance(self.model, DeepSpeedEngine):
             self.escape_from_exception(
                 ep, 
                 bidx,
                 lambda: self.model.save_checkpoint(
-                    self.ckpt_home, 
-                    tag=self.deepspeed_ckpt_tag
+                    self.args.deepspeed_ckpt_home, 
+                    tag=self.args.deepspeed_ckpt_tag
                 )
             )
-            with open(f'{self.ckpt_home}/progress.txt', 'w') as f:
+            with open(f'{self.args.deepspeed_ckpt_home}/progress.txt', 'w') as f:
                 f.write(f'{ep}-{bidx}')
 
 
@@ -251,7 +260,7 @@ class SFTrainer:
             period_loss_list.append(loss_val)
             period_calc_time_list.append(stop_calc_timer())
 
-            if real_bidx % self.args.log_period:
+            if real_bidx % self.args.log_period == 0:
                 self.period_log(
                     ep, 
                     real_bidx, 
@@ -259,13 +268,13 @@ class SFTrainer:
                     period_calc_time_list
                 )
 
-            if real_bidx % self.args.save_period:
+            if real_bidx % self.args.save_period == 0:
                 self.save_all_state(ep, real_bidx)
 
-            if self.args.local_rank == 0 and real_bidx % self.args.validate_period:
+            if self.args.local_rank == 0 and real_bidx % self.args.validate_period == 0:
                 self.validate(ep, real_bidx)
 
-            if self.args.local_rank == 0 and real_bidx % self.args.replicate_period:
+            if self.args.local_rank == 0 and real_bidx % self.args.replicate_period == 0:
                 self.escape_from_exception(
                     ep,
                     bidx,
