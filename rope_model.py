@@ -296,7 +296,17 @@ def create_sequential_model(
 
 
 class LLM(nn.Module):
-    def __init__(self, vocab, pad_token_id, d_model=768, num_head=12, max_len=512, ext_factor=2, dropout=0.1, num_blocks=12):
+    def __init__(
+        self, 
+        vocab, 
+        pad_token_id, 
+        d_model=768, 
+        num_head=12, 
+        max_len=512, 
+        ext_factor=2, 
+        dropout=0.1, 
+        num_blocks=12
+    ):
         super(LLM, self).__init__()
 
         head_size = d_model//num_head

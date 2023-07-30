@@ -41,7 +41,8 @@ def get_args():
 
     arg_parser.add_argument('--data_name', default='openwebtext')
     arg_parser.add_argument(
-        '--data_path', default='/root/autodl-tmp/content/drive/MyDrive/webtext-datasets/arch/')
+        '--data_path', default='/root/autodl-tmp/pile02-parsed')
+    arg_parser.add_argument('--valid_data_path', default='/root/autodl-tmp/pile00-parsed')
     arg_parser.add_argument('--data_vendor', default='hf')
     arg_parser.add_argument('--loader_workers', default=32, type=int)
 
@@ -49,6 +50,9 @@ def get_args():
     arg_parser.add_argument('--log_path', default='/root/tf-logs')
     arg_parser.add_argument('--my_log', default='./tmp/train.log')
 
+    arg_parser.add_argument('--valid_period', default=200, type=int)
+    
+    arg_parser.add_argument('--valid_batch_num', default=40, type=int)
     arg_parser.add_argument('--start_batch', default=0, type=int)
     arg_parser.add_argument('--batch_period', default=20, type=int)
     arg_parser.add_argument('--flush_period', default=20, type=int)
@@ -60,6 +64,7 @@ def get_args():
     arg_parser.add_argument('--batch_size', default=10, type=int)
 
     arg_parser.add_argument('--max_len', default=512, type=int)
+    arg_parser.add_argument('--ext_factor', default=2, type=int)
     arg_parser.add_argument('--d_model', default=512, type=int)
     arg_parser.add_argument('--n_head', default=32, type=int)
     arg_parser.add_argument('--n_block', default=12, type=int)
@@ -134,10 +139,6 @@ def load_model_chkpt(
 
 def prepare_tokenizer(tkn_path):
     tkn = AutoTokenizer.from_pretrained(tkn_path)
-    # tkn = GPT2Tokenizer.from_pretrained(tkn_path)
-    # tkn.pad_token = '[PAD]'
-    # tkn.add_tokens(added_tokens)
-    # VOCAB_SIZE = tkn.vocab_size + len(added_tokens)
     VOCAB_SIZE = tkn.vocab_size
     return tkn, VOCAB_SIZE
 
@@ -153,3 +154,33 @@ def save_model_in_fp16(model_eng, save_home, model_name, bidx):
     state_dict = model_eng.module.state_dict()
     state_dict_fp16 = {k: v.half() for k, v in state_dict.items()}
     torch.save(state_dict_fp16, f'{save_home}/{model_name}-{bidx}.pt')
+    
+def convert_batch_to_ids(
+    tokenizer, 
+    pure_txt_list, 
+    max_len, 
+    ext_factor,
+    device
+):
+    x_encoded = tokenizer.batch_encode_plus(
+        pure_txt_list,
+        max_length=max_len * ext_factor + 1,
+        padding='max_length',
+        truncation=True,
+        return_tensors='pt'
+    )
+    base_ids, x_attn_mask = x_encoded['input_ids'], x_encoded['attention_mask']
+    batch_avg_ntokens = x_attn_mask.sum() / x_attn_mask.size(0)
+    
+    input_ids = base_ids[..., :-1]
+    target_ids = base_ids[..., 1:]
+    return input_ids.to(device), target_ids.to(device), batch_avg_ntokens
+
+def remove_html_and_links(text):
+    soup = BeautifulSoup(text, "html.parser")
+    text_without_tags = soup.get_text()
+
+    url_pattern = re.compile(r'http[s]?://(?:[a-zA-Z]|[0-9]|[$-_@.&+]|[!*\\(\\),]|(?:%[0-9a-fA-F][0-9a-fA-F]))+')
+    text_without_links = url_pattern.sub('', text_without_tags)
+
+    return text_without_links

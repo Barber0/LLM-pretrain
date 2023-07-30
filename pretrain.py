@@ -2,16 +2,24 @@ import deepspeed
 import os
 from time import time
 from torch.utils.tensorboard import SummaryWriter
-import math
 
 from rope_model import LLM
 from datasets import load_from_disk
 from deepspeed.utils import RepeatingLoader
 from torch.utils.data import DataLoader
 
-from utils import build_logger, get_args, save_ds_chkpt, prepare_tokenizer, count_parameters, load_model_chkpt, save_model_in_fp16
+from utils import (
+    build_logger, 
+    get_args, 
+    save_ds_chkpt, 
+    prepare_tokenizer, 
+    count_parameters, 
+    load_model_chkpt, 
+    save_model_in_fp16,
+    convert_batch_to_ids,
+)
+
 from consts import *
-import json
 
 import random
 import numpy as np
@@ -25,6 +33,32 @@ def set_random_seed(seed):
 
 seed = 168
 set_random_seed(seed)
+
+def validate(model_eng, tokenizer, val_loader, args):
+    model_eng.eval()
+    total_loss_list = []
+
+    vali_start = time()
+    with torch.no_grad():
+        for bidx in range(args.valid_batch_num):
+            batch = next(val_loader)
+            input_ids, target_ids, batch_avg_ntokens = convert_batch_to_ids(
+                tokenizer,
+                batch['text'],
+                args.max_len,
+                args.ext_factor,
+                model_eng.device
+            )
+
+            loss = model_eng(
+                input_ids, 
+                target_ids,
+            )
+            total_loss_list.append(loss.item())
+
+    vali_time = time() - vali_start
+    average_loss = sum(total_loss_list) / len(total_loss_list)
+    return average_loss, vali_time
 
 def run(args):
     logger = build_logger(
@@ -40,7 +74,8 @@ def run(args):
         d_model=args.d_model,
         num_head=args.n_head,
         num_blocks=args.n_block,
-        max_len=args.max_len
+        max_len=args.max_len,
+        ext_factor=args.ext_factor
     )
 
     param_amount_b = count_parameters(base_model) * 1e-9
@@ -56,6 +91,7 @@ def run(args):
 
     logger.info('Preparing dataset')
     dataset = load_from_disk(args.data_path)
+    vali_dataset = load_from_disk(args.valid_data_path).shuffle(seed=1234)
     logger.info('Dataset ready, total_len: %d', len(dataset))
     
     model_eng, opt, base_data_loader, _ = deepspeed.initialize(
@@ -63,11 +99,19 @@ def run(args):
         config=args.ds_cfg,
         training_data=dataset
     )
+        
     micro_batch_num = len(base_data_loader)
     logger.info('Rank: %d, batch_num: %d', args.local_rank, micro_batch_num)
 
     rep_data_loader = RepeatingLoader(base_data_loader)
     data_iter = iter(rep_data_loader)
+    
+    _, get_micro_batch_size, _ = model_eng.get_batch_info()
+    vali_loader = iter(RepeatingLoader(DataLoader(
+        vali_dataset, 
+        batch_size=get_micro_batch_size(),
+        shuffle=True
+    )))
 
     if args.load_home is None and args.ckpt is not None and os.path.exists(args.ckpt):
         model_eng.load_checkpoint(args.ckpt, args.tag_name)
@@ -83,24 +127,18 @@ def run(args):
             batch = next(data_iter)
             if bidx < args.start_batch:
                 continue
-
-            x_encoded = tkn.batch_encode_plus(
+                
+            input_ids, target_ids, batch_avg_ntokens = convert_batch_to_ids(
+                tkn,
                 batch['text'],
-                max_length=args.max_len * 2 + 1,
-                padding='max_length',
-                truncation=True,
-                return_tensors='pt'
+                args.max_len,
+                args.ext_factor,
+                model_eng.device
             )
-            base_ids, x_attn_mask = x_encoded['input_ids'], x_encoded['attention_mask']
-            batch_avg_ntokens = x_attn_mask.sum() / x_attn_mask.size(0)
-            period_ntokens += batch_avg_ntokens
-
-
-            input_ids = base_ids[..., :-1].to(model_eng.device)
-            target_ids = base_ids[..., 1:].to(model_eng.device)
 
             prop_start = time()
             try:
+                model_eng.train()
                 loss = model_eng.forward(input_ids, target_ids)
                 model_eng.backward(loss)
                 model_eng.step()
@@ -111,15 +149,26 @@ def run(args):
                 prop_time = time() - prop_start
                 period_prop_time += prop_time
 
+            period_loss += loss.item()
+            period_ntokens += batch_avg_ntokens
+
+            next_bidx = bidx + 1
             if args.local_rank == 0:
                 try:
                     writer.add_scalar('Train Loss', loss, bidx)
                 except Exception as e:
                     logger.warn('batch: %d, tensorboard error: %s', bidx, e)
 
-            period_loss += loss.item()
+                if next_bidx % args.valid_period == 0:
+                    avg_vali_loss, vali_time = validate(model_eng, tkn, vali_loader, args)
+                    logger.info('ep: %d, batch: %d, time: %.2f, valid_loss: %f', 
+                                    ep, next_bidx, vali_time, avg_vali_loss)
+                    try:
+                        writer.add_scalar('Validate Loss', avg_vali_loss, bidx)
+                    except Exception as e:
+                        logger.warn('batch: %d, tensorboard error: %s', bidx, e)
 
-            next_bidx = bidx + 1
+
             if next_bidx % args.batch_period == 0:
                 time_period = time() - stime
 
@@ -153,8 +202,7 @@ def run(args):
                         args.save_home,
                         args.model_name,
                         next_bidx
-                    )
-                    
+                    )                    
 
                 period_ntokens = 0
                 period_prop_time = 0
@@ -166,11 +214,8 @@ def run(args):
 
 if __name__ == '__main__':
     args = get_args()
-    # import torch
-    # deepspeed.init_distributed(dist_backend='nccl')
     args.local_rank = int(os.environ['LOCAL_RANK'])
     args.world_size = int(os.environ['WORLD_SIZE'])
-    # torch.cuda.set_device(args.local_rank)
 
     run(args=args)
 
