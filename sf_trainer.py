@@ -43,6 +43,11 @@ class SFTrainer:
         self.tb_writer = tb_writer
         
         self._validate_iter = None
+        
+    @staticmethod
+    def validate_ckpt(ckpt_home, ckpt_tag):
+        return ckpt_home is not None and ckpt_tag is not None and \
+            os.path.exists(ckpt_home)
 
     @staticmethod
     def load_ckpt(
@@ -52,16 +57,22 @@ class SFTrainer:
         logger: Logger
     ):
         if isinstance(model, DSEnginePlaceholder):
-            if not os.path.exists(args.deepspeed_ckpt_home):
-                logger.error('Checkpoint home not found: %s', args.deepspeed_ckpt_home)
-                raise Exception(f'Checkpoint home not found: %s', 
-                                args.deepspeed_ckpt_home)
+            if not self.validate_ckpt(args.deepspeed_ckpt_home, args.deepspeed_ckpt_tag):
+                logger.warning('Checkpoint home not found: %s/%s', 
+                               args.deepspeed_ckpt_home,
+                               args.deepspeed_ckpt_tag)
+                if args.deepspeed_ckpt_home is not None:
+                    os.makedirs(args.deepspeed_ckpt_home, exist_ok=True)
+                return
             model.load_checkpoint(args.deepspeed_ckpt_home, args.deepspeed_ckpt_tag)
         elif isinstance(model, Module):
             if not os.path.exists(args.torch_ckpt_home):
-                logger.error('Checkpoint home not found: %s', args.torch_ckpt_home)
-                raise Exception(f'Checkpoint home not found: %s', 
-                                args.torch_ckpt_home)
+                logger.warning('Checkpoint home not found: %s/%s', 
+                               args.torch_ckpt_home
+                               args.torch_ckpt_tag)
+                if args.torch_ckpt_home is not None:
+                    os.makedirs(args.torch_ckpt_home, exist_ok=True)
+                return
             
             if args.torch_ckpt_tag is not None:
                 assert isinstance(model, Module)

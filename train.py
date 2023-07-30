@@ -75,7 +75,11 @@ def main(
     param_num = count_parameters(base_model) * 1e-9
     logger.info('Model parameters: %f B', param_num)
 
-    if train_args.torch_ckpt_tag is not None:
+    use_torch_ckpt = SFTrainer.validate_ckpt(
+        train_args.torch_ckpt_home, 
+        train_args.torch_ckpt_tag
+    )
+    if use_torch_ckpt:
         SFTrainer.load_ckpt(
             train_args,
             base_model,
@@ -91,7 +95,11 @@ def main(
         training_data=train_set,
     )
 
-    if train_args.torch_ckpt_tag is None and train_args.deepspeed_ckpt_tag is not None:
+    use_ds_ckpt = SFTrainer.validate_ckpt(
+        train_args.deepspeed_ckpt_home, 
+        train_args.deepspeed_ckpt_tag
+    )
+    if not use_torch_ckpt and use_ds_ckpt:
         SFTrainer.load_ckpt(
             train_args,
             model_engine,

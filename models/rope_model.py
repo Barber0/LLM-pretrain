@@ -2,7 +2,6 @@ import math
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from flash_attn import flash_attn_func
 
 min_fp16 = torch.finfo(torch.float16).min
 
@@ -70,6 +69,13 @@ class RoPE_MHA(nn.Module):
         self.dropout = nn.Dropout(dropout)
         self.proj = nn.Linear(d_model, d_model * 3)
         self.ff = nn.Linear(d_model, d_model)
+        
+        self.use_flash_attn = False
+        try:
+            from flash_attn import flash_attn_func
+            self.use_flash_attn = True
+        except ImportError:
+            self.use_flash_attn = False
 
     def forward(
         self,
@@ -87,7 +93,7 @@ class RoPE_MHA(nn.Module):
 
         next_prefix_kv = None
 
-        if mask is None:
+        if mask is None and self.use_flash_attn:
             x_proj = x_proj.permute(2, 0, 1, 3, 4)
             assert x_proj.shape == (
                 3,
