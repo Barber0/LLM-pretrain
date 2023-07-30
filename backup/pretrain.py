@@ -3,7 +3,7 @@ import os
 from time import time
 from torch.utils.tensorboard import SummaryWriter
 
-from rope_model import LLM
+from models.rope_model import LLM
 from datasets import load_from_disk
 from deepspeed.utils import RepeatingLoader
 from torch.utils.data import DataLoader
