@@ -21,6 +21,19 @@ from torch.utils.data import DataLoader
 from torch.optim import Optimizer
 from torch.utils.tensorboard import SummaryWriter
 
+import random
+import numpy as np
+import torch
+
+def set_random_seed(seed):
+    random.seed(seed)
+    np.random.seed(seed)
+    torch.manual_seed(seed)
+    torch.cuda.manual_seed_all(seed)
+
+seed = 168
+set_random_seed(seed)
+
 def compute_loss_fn(
     eng: ModelType,
     x: torch.Tensor,
@@ -60,7 +73,7 @@ def main(
         num_blocks=model_args.n_layers
     )
     param_num = count_parameters(base_model) * 1e-9
-    logger.info('Model parameters: %d B', param_num)
+    logger.info('Model parameters: %f B', param_num)
 
     if train_args.torch_ckpt_tag is not None:
         SFTrainer.load_ckpt(

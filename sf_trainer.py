@@ -8,9 +8,14 @@ from data_obj.train_args import TrainArgs
 from logging import Logger
 from torch.utils.tensorboard import SummaryWriter
 from typing import Union, Callable, List, Tuple
-from deepspeed import DeepSpeedEngine
 
-ModelType = Union[DeepSpeedEngine, Module]
+try:
+    from deepspeed import DeepSpeedEngine as DSEnginePlaceholder
+except ImportError:
+    class DSEnginePlaceholder:
+        pass
+
+ModelType = Union[DSEnginePlaceholder, Module]
 
 class SFTrainer:
     def __init__(
@@ -46,7 +51,13 @@ class SFTrainer:
         opt: Optimizer,
         logger: Logger
     ):
-        if isinstance(model, Module):
+        if isinstance(model, DSEnginePlaceholder):
+            if not os.path.exists(args.deepspeed_ckpt_home):
+                logger.error('Checkpoint home not found: %s', args.deepspeed_ckpt_home)
+                raise Exception(f'Checkpoint home not found: %s', 
+                                args.deepspeed_ckpt_home)
+            model.load_checkpoint(args.deepspeed_ckpt_home, args.deepspeed_ckpt_tag)
+        elif isinstance(model, Module):
             if not os.path.exists(args.torch_ckpt_home):
                 logger.error('Checkpoint home not found: %s', args.torch_ckpt_home)
                 raise Exception(f'Checkpoint home not found: %s', 
@@ -75,12 +86,7 @@ class SFTrainer:
                     else:
                         logger.warn('Optimizer not found: %s', model_path)
 
-        elif isinstance(model, DeepSpeedEngine):
-            if not os.path.exists(args.deepspeed_ckpt_home):
-                logger.error('Checkpoint home not found: %s', args.deepspeed_ckpt_home)
-                raise Exception(f'Checkpoint home not found: %s', 
-                                args.deepspeed_ckpt_home)
-            model.load_checkpoint(args.deepspeed_ckpt_home, args.deepspeed_ckpt_tag)
+        
 
 
     def get_next_validate_batch(self):
@@ -202,7 +208,7 @@ class SFTrainer:
 
 
     def save_model_in_fp16(self, ep, bidx):
-        if isinstance(self.model, DeepSpeedEngine):
+        if isinstance(self.model, DSEnginePlaceholder):
             state_dict = self.model.module.state_dict()
             ckpt_home = self.args.deepspeed_ckpt_home
         elif isinstance(self.model, Module):
@@ -225,12 +231,7 @@ class SFTrainer:
 
 
     def save_all_state(self, ep, bidx):
-        if isinstance(self.model, Module):
-            self.escape_from_exception(ep, bidx,
-                lambda: self.save_model_in_fp16(ep, bidx))
-            self.escape_from_exception(ep, bidx,
-                lambda: self.save_optimizer(ep, bidx))
-        elif isinstance(self.model, DeepSpeedEngine):
+        if isinstance(self.model, DSEnginePlaceholder):
             self.escape_from_exception(
                 ep, 
                 bidx,
@@ -241,6 +242,12 @@ class SFTrainer:
             )
             with open(f'{self.args.deepspeed_ckpt_home}/progress.txt', 'w') as f:
                 f.write(f'{ep}-{bidx}')
+        
+        elif isinstance(self.model, Module):
+            self.escape_from_exception(ep, bidx,
+                lambda: self.save_model_in_fp16(ep, bidx))
+            self.escape_from_exception(ep, bidx,
+                lambda: self.save_optimizer(ep, bidx))
 
 
     def train_one_epoch(self, ep=0):
