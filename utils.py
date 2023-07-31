@@ -1,9 +1,10 @@
 import logging
 from argparse import ArgumentParser
+from dataclasses import asdict, fields
 
 from transformers import AutoTokenizer
-from dataclasses import asdict, fields
-from data_obj import ModelArgs, TrainArgs, ProgramArgs
+
+from data_obj import ModelArgs, PositionEmbeddingType, ProgramArgs, TrainArgs
 
 
 def count_parameters(model):
@@ -36,7 +37,10 @@ def add_arguments_from_dataclass(
     dataclass_dict = asdict(dataclass_instance)
     for key, value in dataclass_dict.items():
         val_type = str if value is None else type(value)
-        parser.add_argument(f'--{key}', type=val_type, default=value)
+        if val_type is PositionEmbeddingType:
+            parser.add_argument(f'--{key}', type=val_type, choices=list(value), default=value)
+        else:
+            parser.add_argument(f'--{key}', type=val_type, default=value)
 
 
 def parse_to_dataclass(dataclass_type, args):

@@ -1,29 +1,19 @@
-from sf_trainer import SFTrainer, ModelType
-from utils import (
-    count_parameters,
-    build_logger,
-    get_args,
-    prepare_tokenizer,
-    convert_batch_to_ids,
-)
-from data_obj import (
-    ProgramArgs, 
-    ModelArgs, 
-    TrainArgs,
-)
-from models.rope_model import LLM
-from datasets import load_from_disk
+import random
 
 import deepspeed
-
-import torch
-from torch.utils.data import DataLoader
-from torch.optim import Optimizer
-from torch.utils.tensorboard import SummaryWriter
-
-import random
 import numpy as np
 import torch
+from datasets import load_from_disk
+from torch.optim import Optimizer
+from torch.utils.data import DataLoader
+from torch.utils.tensorboard import SummaryWriter
+
+from data_obj import ModelArgs, ProgramArgs, TrainArgs
+from models import SFLLM
+from sf_trainer import ModelType, SFTrainer
+from utils import (build_logger, convert_batch_to_ids, count_parameters,
+                   get_args, prepare_tokenizer)
+
 
 def set_random_seed(seed):
     random.seed(seed)
@@ -31,8 +21,10 @@ def set_random_seed(seed):
     torch.manual_seed(seed)
     torch.cuda.manual_seed_all(seed)
 
+
 seed = 168
 set_random_seed(seed)
+
 
 def compute_loss_fn(
     eng: ModelType,
@@ -41,6 +33,7 @@ def compute_loss_fn(
     grad_accum_period,
 ):
     return eng.forward(x, y)
+
 
 def update_param_fn(
     bidx: int,
@@ -52,6 +45,7 @@ def update_param_fn(
     eng.backward(loss)
     eng.step()
 
+
 def main(
     prog_args: ProgramArgs,
     model_args: ModelArgs,
@@ -62,21 +56,16 @@ def main(
         prog_args.log_path,
     )
     tkn, VOCAB_SIZE = prepare_tokenizer(prog_args.tokenizer_path)
-    base_model = LLM(
-        vocab=VOCAB_SIZE,
+    base_model = SFLLM(
+        vocab_size=VOCAB_SIZE,
         pad_token_id=tkn.pad_token_id,
-        d_model=model_args.hidden_states,
-        num_head=model_args.n_heads,
-        max_len=model_args.max_len,
-        ext_factor=model_args.ext_factor,
-        dropout=model_args.dropout,
-        num_blocks=model_args.n_layers
+        args=model_args,
     )
     param_num = count_parameters(base_model) * 1e-9
     logger.info('Model parameters: %f B', param_num)
 
     use_torch_ckpt = SFTrainer.validate_ckpt(
-        train_args.torch_ckpt_home, 
+        train_args.torch_ckpt_home,
         train_args.torch_ckpt_tag
     )
     if use_torch_ckpt:
@@ -96,7 +85,7 @@ def main(
     )
 
     use_ds_ckpt = SFTrainer.validate_ckpt(
-        train_args.deepspeed_ckpt_home, 
+        train_args.deepspeed_ckpt_home,
         train_args.deepspeed_ckpt_tag
     )
     if not use_torch_ckpt and use_ds_ckpt:
@@ -120,7 +109,7 @@ def main(
 
     tb_writer = SummaryWriter(log_dir=prog_args.tensorboard_path)
 
-    batch_collate_fn = lambda batch: convert_batch_to_ids(
+    def batch_collate_fn(batch): return convert_batch_to_ids(
         tkn,
         batch['text'],
         model_args.max_len,
@@ -142,12 +131,12 @@ def main(
     )
 
     trainer.train()
-    
+
 
 if __name__ == '__main__':
     prog_args, model_args, train_args = get_args()
     main(
-        prog_args=prog_args, 
-        model_args=model_args, 
+        prog_args=prog_args,
+        model_args=model_args,
         train_args=train_args,
     )
