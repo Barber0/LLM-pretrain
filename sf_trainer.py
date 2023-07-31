@@ -1,13 +1,15 @@
 import os
-import torch
-from time import time
-from torch.utils.data import DataLoader
-from torch.optim import Optimizer
-from torch.nn import Module
-from data_obj.train_args import TrainArgs
 from logging import Logger
+from time import time
+from typing import Callable, List, Tuple, Union
+
+import torch
+from torch.nn import Module
+from torch.optim import Optimizer
+from torch.utils.data import DataLoader
 from torch.utils.tensorboard import SummaryWriter
-from typing import Union, Callable, List, Tuple
+
+from data_obj.train_args import TrainArgs
 
 try:
     from deepspeed import DeepSpeedEngine as DSEnginePlaceholder
@@ -16,6 +18,7 @@ except ImportError:
         pass
 
 ModelType = Union[DSEnginePlaceholder, Module]
+
 
 class SFTrainer:
     def __init__(
@@ -41,9 +44,9 @@ class SFTrainer:
         self.update_param_fn = update_param_fn
         self.logger = logger
         self.tb_writer = tb_writer
-        
+
         self._validate_iter = None
-        
+
     @staticmethod
     def validate_ckpt(ckpt_home, ckpt_tag):
         return ckpt_home is not None and ckpt_tag is not None and \
@@ -51,29 +54,30 @@ class SFTrainer:
 
     @staticmethod
     def load_ckpt(
-        args: TrainArgs, 
-        model: ModelType, 
+        args: TrainArgs,
+        model: ModelType,
         opt: Optimizer,
         logger: Logger
     ):
         if isinstance(model, DSEnginePlaceholder):
-            if not self.validate_ckpt(args.deepspeed_ckpt_home, args.deepspeed_ckpt_tag):
-                logger.warning('Checkpoint home not found: %s/%s', 
+            if not SFTrainer.validate_ckpt(args.deepspeed_ckpt_home, args.deepspeed_ckpt_tag):
+                logger.warning('Checkpoint home not found: %s/%s',
                                args.deepspeed_ckpt_home,
                                args.deepspeed_ckpt_tag)
                 if args.deepspeed_ckpt_home is not None:
                     os.makedirs(args.deepspeed_ckpt_home, exist_ok=True)
                 return
-            model.load_checkpoint(args.deepspeed_ckpt_home, args.deepspeed_ckpt_tag)
+            model.load_checkpoint(args.deepspeed_ckpt_home,
+                                  args.deepspeed_ckpt_tag)
         elif isinstance(model, Module):
-            if not os.path.exists(args.torch_ckpt_home):
-                logger.warning('Checkpoint home not found: %s/%s', 
-                               args.torch_ckpt_home
+            if not SFTrainer.validate_ckpt(args.torch_ckpt_home, args.torch_ckpt_tag):
+                logger.warning('Checkpoint home not found: %s/%s',
+                               args.torch_ckpt_home,
                                args.torch_ckpt_tag)
                 if args.torch_ckpt_home is not None:
                     os.makedirs(args.torch_ckpt_home, exist_ok=True)
                 return
-            
+
             if args.torch_ckpt_tag is not None:
                 assert isinstance(model, Module)
                 model_path = f'{args.torch_ckpt_home}/{args.torch_ckpt_tag}.pt'
@@ -97,13 +101,10 @@ class SFTrainer:
                     else:
                         logger.warn('Optimizer not found: %s', model_path)
 
-        
-
-
     def get_next_validate_batch(self):
         if self._validate_iter is None:
             self._validate_iter = iter(self.validate_loader)
-            
+
         try:
             batch = next(self._validate_iter)
         except StopIteration:
@@ -112,18 +113,17 @@ class SFTrainer:
 
         return batch
 
-
     @staticmethod
     def start_timer():
         stime = time()
+
         def _stop_timer():
             return time() - stime
         return _stop_timer
 
-
     @staticmethod
     def list_mean(
-        data_list: List,           
+        data_list: List,
         need_clear: bool = True
     ):
         mean_val = sum(data_list) / len(data_list)
@@ -131,20 +131,18 @@ class SFTrainer:
             data_list.clear()
         return mean_val
 
-
     def escape_from_exception(self, ep, bidx, callback):
         try:
             callback()
         except Exception as ex:
             self.logger.warn('ep: %d, batch: %d, err: %s', ep, bidx, ex)
 
-
     def train_one_batch(self, ep, bidx, batch):
         self.model.train()
         x, y = self.batch_collate_fn(batch)
         loss = self.compute_loss_fn(
-            self.model, 
-            x, 
+            self.model,
+            x,
             y,
             self.args.grad_accum_period,
         )
@@ -152,7 +150,7 @@ class SFTrainer:
         if self.args.local_rank == 0:
             self.escape_from_exception(
                 ep,
-                bidx, 
+                bidx,
                 lambda: self.tb_writer.add_scalar(
                     'Train Loss', loss.item(), bidx)
             )
@@ -166,7 +164,6 @@ class SFTrainer:
         )
         return loss.item()
 
-
     def validate(self, ep, bidx):
         stop_validate_timer = self.start_timer()
         self.model.eval()
@@ -176,8 +173,8 @@ class SFTrainer:
                 batch = self.get_next_validate_batch()
                 x, y = self.batch_collate_fn(batch)
                 loss = self.compute_loss_fn(
-                    self.model, 
-                    x, 
+                    self.model,
+                    x,
                     y,
                     self.args.grad_accum_period
                 )
@@ -189,7 +186,6 @@ class SFTrainer:
             ep, bidx, validate_time, avg_validate_loss
         )
 
-
     def period_log(
         self,
         ep,
@@ -199,24 +195,23 @@ class SFTrainer:
     ):
         avg_loss = self.list_mean(period_loss_list)
         avg_calc_time = self.list_mean(period_calc_time_list)
-        
+
         cur_lr = self.opt.param_groups[0]['lr']
         self.logger.info(
             '[T] ep: %d, batch: %d, calc_time: %.2f, '
             'loss: %f, lr: %f',
-            ep, bidx, avg_calc_time, 
+            ep, bidx, avg_calc_time,
             avg_loss, cur_lr
         )
 
         if self.args.local_rank == 0:
             self.escape_from_exception(
                 ep,
-                bidx, 
+                bidx,
                 lambda: self.tb_writer.add_scalar(
                     'Learning Rate', cur_lr, bidx)
             )
             self.tb_writer.flush()
-
 
     def save_model_in_fp16(self, ep, bidx):
         if isinstance(self.model, DSEnginePlaceholder):
@@ -227,12 +222,11 @@ class SFTrainer:
             ckpt_home = self.args.torch_ckpt_home
         else:
             raise Exception(f'Unsupported model type: {type(self.model)}')
-        
+
         state_dict_fp16 = {k: v.half() for k, v in state_dict.items()}
         os.makedirs(ckpt_home, exist_ok=True)
         save_path = f'{ckpt_home}/{self.args.deepspeed_ckpt_tag}-{ep}_{bidx}.pt'
         torch.save(state_dict_fp16, save_path)
-
 
     def save_optimizer(self, ep, bidx):
         state_dict = self.opt.state_dict()
@@ -240,26 +234,24 @@ class SFTrainer:
         save_path = f'{self.args.torch_ckpt_home}/opt-{self.args.torch_ckpt_tag}-{ep}_{bidx}.pt'
         torch.save(state_dict, save_path)
 
-
     def save_all_state(self, ep, bidx):
         if isinstance(self.model, DSEnginePlaceholder):
             self.escape_from_exception(
-                ep, 
+                ep,
                 bidx,
                 lambda: self.model.save_checkpoint(
-                    self.args.deepspeed_ckpt_home, 
+                    self.args.deepspeed_ckpt_home,
                     tag=self.args.deepspeed_ckpt_tag
                 )
             )
             with open(f'{self.args.deepspeed_ckpt_home}/progress.txt', 'w') as f:
                 f.write(f'{ep}-{bidx}')
-        
+
         elif isinstance(self.model, Module):
             self.escape_from_exception(ep, bidx,
-                lambda: self.save_model_in_fp16(ep, bidx))
+                                       lambda: self.save_model_in_fp16(ep, bidx))
             self.escape_from_exception(ep, bidx,
-                lambda: self.save_optimizer(ep, bidx))
-
+                                       lambda: self.save_optimizer(ep, bidx))
 
     def train_one_epoch(self, ep=0):
         data_iter = iter(self.train_loader)
@@ -280,8 +272,8 @@ class SFTrainer:
 
             if real_bidx % self.args.log_period == 0:
                 self.period_log(
-                    ep, 
-                    real_bidx, 
+                    ep,
+                    real_bidx,
                     period_loss_list,
                     period_calc_time_list
                 )
@@ -298,9 +290,8 @@ class SFTrainer:
                     bidx,
                     lambda: self.save_model_in_fp16(ep, bidx)
                 )
-        
+
         return real_bidx
-    
 
     def train(self):
         for ep in range(self.args.epochs):

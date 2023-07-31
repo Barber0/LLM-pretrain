@@ -1,9 +1,14 @@
 import math
+
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-min_fp16 = torch.finfo(torch.float16).min
+try:
+    from flash_attn import flash_attn_func
+    USE_FLASH_ATTN = True
+except ImportError:
+    USE_FLASH_ATTN = False
 
 
 def precompute_freqs_cis(dim: int, end: int, theta: float = 10000.0):
@@ -69,13 +74,6 @@ class RoPE_MHA(nn.Module):
         self.dropout = nn.Dropout(dropout)
         self.proj = nn.Linear(d_model, d_model * 3)
         self.ff = nn.Linear(d_model, d_model)
-        
-        self.use_flash_attn = False
-        try:
-            from flash_attn import flash_attn_func
-            self.use_flash_attn = True
-        except ImportError:
-            self.use_flash_attn = False
 
     def forward(
         self,
@@ -93,7 +91,7 @@ class RoPE_MHA(nn.Module):
 
         next_prefix_kv = None
 
-        if mask is None and self.use_flash_attn:
+        if mask is None and USE_FLASH_ATTN:
             x_proj = x_proj.permute(2, 0, 1, 3, 4)
             assert x_proj.shape == (
                 3,
@@ -142,9 +140,11 @@ class RoPE_MHA(nn.Module):
         ff_o = self.ff(attn_o)
         return ff_o, next_prefix_kv
 
-    def attn(self, q, k, v, mask):
+    def attn(self, q: torch.Tensor, k: torch.Tensor, v: torch.Tensor, mask: torch.Tensor):
         scores = q.matmul(k.transpose(-2, -1)) / self.head_scale
-        scores = scores.masked_fill(mask == 0, min_fp16)
+
+        mask_value = -torch.finfo(q.dtype).max
+        scores = scores.masked_fill(mask == 0, mask_value)
 
         scores = F.softmax(scores, dim=-1)
         scores = self.dropout(scores)
@@ -303,14 +303,14 @@ def create_sequential_model(
 
 class LLM(nn.Module):
     def __init__(
-        self, 
-        vocab, 
-        pad_token_id, 
-        d_model=768, 
-        num_head=12, 
-        max_len=512, 
-        ext_factor=2, 
-        dropout=0.1, 
+        self,
+        vocab,
+        pad_token_id,
+        d_model=768,
+        num_head=12,
+        max_len=512,
+        ext_factor=2,
+        dropout=0.1,
         num_blocks=12
     ):
         super(LLM, self).__init__()
@@ -334,7 +334,7 @@ class LLM(nn.Module):
         self.decoder = nn.Linear(d_model, vocab, bias=False)
         self.loss_fn = nn.CrossEntropyLoss(ignore_index=pad_token_id)
 
-    def raw(self, x, generate=False, prefix_kv_list=None):
+    def raw(self, x, generate=(not USE_FLASH_ATTN), prefix_kv_list=None):
         x_rep, freq_cis_q, freq_cis_k, mask, prefix_kv_list = \
             self.emb.forward_with_prefix(x, generate, prefix_kv_list)
 
