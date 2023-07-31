@@ -85,7 +85,7 @@ class Attention(nn.Module):
                 q,
                 k,
                 v,
-                dropout_p=self.dropout_val,
+                dropout_p=self.dropout_prob,
                 causal=True
             )
             attn_o = rearrange(attn_o, 'b n h d -> b n (h d)')
@@ -108,9 +108,9 @@ class Attention(nn.Module):
 
     def attn(self, q: Tensor, k: Tensor, v: Tensor, attn_masks: Tensor, casual_mask: Tensor):
         scores = torch.einsum('...qd, ...kd -> ...qk', q, k) / self.head_scale
-        mask_value = -torch.finfo(q.dtype).max
+        mask_value = torch.finfo(q.dtype).min
         scores = scores.masked_fill(casual_mask == 0, mask_value)
-        scores = scores.masked_fill(attn_masks == 0, mask_value)
+        # scores = scores.masked_fill(attn_masks == 0, mask_value)
         scores = F.softmax(scores, dim=-1)
         scores = self.dropout(scores)
         return torch.matmul(scores, v)
@@ -126,24 +126,20 @@ class BlockData:
 
 
 class Block(Attention):
-    ln1: LayerNorm = None
-    ln2: LayerNorm = None
-    mlp: MLP = None
+    def __init__(self, hidden_states: int, n_heads: int, rope_fn: RoPE.RoPEFunctionType, dropout_prob: float = 0.1):
+        super(Block, self).__init__(hidden_states, n_heads, rope_fn, dropout_prob)
+        self.ensure_ready()
 
     def ensure_ready(self):
-        if self.ln1 is None:
-            self.ln1 = LayerNorm(self.hidden_states)
-        if self.ln2 is None:
-            self.ln2 = LayerNorm(self.hidden_states)
-        if self.mlp is None:
-            self.mlp = MLP(self.hidden_states, self.hidden_states*4)
+        self.ln1 = LayerNorm(self.hidden_states)
+        self.ln2 = LayerNorm(self.hidden_states)
+        self.mlp = MLP(self.hidden_states, self.hidden_states*4)
 
     def forward_with_prefix(
         self,
         data: BlockData,
         prefix_kv=None
     ):
-        self.ensure_ready()
         attn_o, prefix_kv = super().forward(
             self.ln1(data.x),
             data.freq_cis_q,
@@ -152,10 +148,10 @@ class Block(Attention):
             data.casual_mask,
             prefix_kv
         )
-        x += attn_o
+        x = data.x + attn_o
         x += self.mlp(self.ln2(x))
         return BlockData(
-            x=data.x,
+            x=x,
             freq_cis_q=data.freq_cis_q,
             freq_cis_k=data.freq_cis_k,
             attn_mask=data.attn_mask,
@@ -193,10 +189,10 @@ class SFEmbedding(nn.Embedding):
             prefix_kv_list)
         seq_len = input.size(-1)
         end_idx = start_idx+seq_len
-        freq_cis_q = self.build_freq_cis_fn(seq_len, start_idx)
-        freq_cis_k = freq_cis_q if start_idx == 0 else \
-            self.build_freq_cis_fn(end_idx, 0)
 
+        freq_cis_k = self.build_freq_cis_fn(end_idx, 0)
+        freq_cis_q = freq_cis_k if start_idx == 0 else self.build_freq_cis_fn(seq_len, start_idx)
+        
         attn_mask = (input != self.pad_token_id).int()
         if start_idx > 0:
             attn_mask = torch.cat((
@@ -273,8 +269,9 @@ class SFLLM(nn.Module):
             raise Exception(
                 f'Unsupported position embedding: {args_pos_emb}')
 
+        head_states = self.args.hidden_states // self.args.n_heads
         self.rope_emb = rope_constructor(
-            self.args.hidden_states,
+            head_states,
             self.args.rope_interpolate_factor,
             self.args.rope_theta,
         )
@@ -301,7 +298,7 @@ class SFLLM(nn.Module):
         self.layerNorm = LayerNorm(self.args.hidden_states)
         self.decoder = nn.Linear(
             self.args.hidden_states, self.vocab_size, bias=False)
-        self.loss_fn = CELoss(ignore_index=self.pad_token_id)
+        self.loss_fn = nn.CrossEntropyLoss(ignore_index=self.pad_token_id)
 
     @staticmethod
     def create_mask(max_len):
@@ -322,7 +319,7 @@ class SFLLM(nn.Module):
 
         next_prefix_kv_list = []
         for block, prefix_kv in zip(self.blocks, prefix_kv_list):
-            data_block, next_prefix_kv = block.forward(data_block, prefix_kv)
+            data_block, next_prefix_kv = block.forward_with_prefix(data_block, prefix_kv)
             next_prefix_kv_list.append(next_prefix_kv)
 
         ln_out = self.layerNorm(data_block.x)
@@ -331,7 +328,10 @@ class SFLLM(nn.Module):
         if target_ids is None:
             return y_pred, next_prefix_kv_list
 
-        return self.loss_fn(y_pred, target_ids)
+        return self.loss_fn(
+            y_pred.contiguous().view(-1, y_pred.size(-1)),
+            target_ids.contiguous().view(-1)
+        )
 
     def pipeline_and_loss_fn(self):
         return nn.Sequential(nn.ModuleList([self.vocab_emb] + [block for block in self.blocks] + [

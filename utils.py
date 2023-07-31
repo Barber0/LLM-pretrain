@@ -38,7 +38,7 @@ def add_arguments_from_dataclass(
     for key, value in dataclass_dict.items():
         val_type = str if value is None else type(value)
         if val_type is PositionEmbeddingType:
-            parser.add_argument(f'--{key}', type=val_type, choices=list(value), default=value)
+            parser.add_argument(f'--{key}', type=val_type, choices=list(PositionEmbeddingType), default=value)
         else:
             parser.add_argument(f'--{key}', type=val_type, default=value)
 

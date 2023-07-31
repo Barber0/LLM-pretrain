@@ -1,7 +1,6 @@
 import torch
 from abstract_rope import RoPE
 
-
 class ComplexRoPE(RoPE):
     def build_freq_cis(self, seq_len: int, start_idx: int = 0):
         pos_ids = self._get_pos_ids(seq_len, start_idx)
