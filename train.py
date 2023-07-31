@@ -9,13 +9,9 @@ from torch.utils.data import DataLoader
 from torch.utils.tensorboard import SummaryWriter
 
 from data_obj import ModelArgs, ProgramArgs, TrainArgs
-# from models import SFLLM
-from main_models.rope_model import LLM
 from sf_trainer import ModelType, SFTrainer
 from utils import (build_logger, convert_batch_to_ids, count_parameters,
                    get_args, prepare_tokenizer)
-
-torch.autograd.set_detect_anomaly(True)
 
 def set_random_seed(seed):
     random.seed(seed)
@@ -44,7 +40,6 @@ def update_param_fn(
     opt: Optimizer,
     grad_accum_period,
 ):
-    print(f'--------{bidx}---{loss}')
     eng.backward(loss)
     eng.step()
 
@@ -59,20 +54,14 @@ def main(
         prog_args.log_path,
     )
     tkn, VOCAB_SIZE = prepare_tokenizer(prog_args.tokenizer_path)
-    base_model = LLM(
-        vocab=VOCAB_SIZE,
+
+    from models import SFLLM
+    base_model = SFLLM(
+        vocab_size=VOCAB_SIZE,
         pad_token_id=tkn.pad_token_id,
-        d_model=model_args.hidden_states,
-        num_head=model_args.n_heads,
-        max_len=model_args.max_len,
-        ext_factor=model_args.ext_factor,
-        num_blocks=model_args.n_layers
+        args=model_args,
     )
-    # base_model = SFLLM(
-    #     vocab_size=VOCAB_SIZE,
-    #     pad_token_id=tkn.pad_token_id,
-    #     args=model_args,
-    # )
+
     param_num = count_parameters(base_model) * 1e-9
     logger.info('Model parameters: %f B', param_num)
 

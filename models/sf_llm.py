@@ -148,15 +148,9 @@ class Block(Attention):
             data.casual_mask,
             prefix_kv
         )
-        x = data.x + attn_o
-        x += self.mlp(self.ln2(x))
-        return BlockData(
-            x=x,
-            freq_cis_q=data.freq_cis_q,
-            freq_cis_k=data.freq_cis_k,
-            attn_mask=data.attn_mask,
-            casual_mask=data.casual_mask,
-        ), prefix_kv
+        data.x = data.x + attn_o
+        data.x = data.x + self.mlp(self.ln2(data.x))
+        return data, prefix_kv
 
     def forward(self, data: BlockData):
         return self.forward_with_prefix(data=data)[0]
