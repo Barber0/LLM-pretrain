@@ -3,9 +3,9 @@ from enum import Enum
 
 
 class PositionEmbeddingType(Enum):
-    COMPLEX_ROPE = 1
-    SIMULATED_ROPE = 2
-    LUCIDRAINS_ROPE = 3
+    COMPLEX_ROPE = 'COMPLEX_ROPE'
+    SIMULATED_ROPE = 'SIMULATED_ROPE'
+    LUCIDRAINS_ROPE = 'LUCIDRAINS_ROPE'
 
 
 @dataclass

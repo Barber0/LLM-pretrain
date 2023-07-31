@@ -7,18 +7,19 @@ cd $proj_home_dir
 
 export NCCL_P2P_DISABLE=1
 
-GPUS=1
+GPUS=3
 
 MODEL_ARGS="
-    --hidden_states 768 \
+    --hidden_states 3584 \
     --n_heads 32 \
     --n_layers 25 \
     --max_len 1024 \
-    --ext_factor 1
+    --ext_factor 1 \
+    --position_encoding SIMULATED_ROPE 
 "
 
 PROG_ARGS="
-    --deepspeed_cfg ./config/ds_cfg_pt2.json \
+    --deepspeed_cfg ./config/ds_cfg_pt3.json \
     --train_path /root/autodl-tmp/pile00-parsed \
     --validate_path /root/autodl-tmp/pile02-parsed \
     --tokenizer_path ./tokenizer \
@@ -29,7 +30,9 @@ PROG_ARGS="
 TRAIN_ARGS="
     --start_batch 0 \
     --deepspeed_ckpt_tag main \
-    --deepspeed_ckpt_home /root/autodl-tmp/myllm5-rope-flash-pile-1klen-pile00 
+    --deepspeed_ckpt_home /root/autodl-tmp/myllm5-rope-flash-pile-1klen-pile00 \
+    --torch_ckpt_home /root/autodl-tmp/model-arch \
+    --torch_ckpt_tag main-18000-29400
 "
 
 deepspeed \

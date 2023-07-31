@@ -5,7 +5,7 @@ from abstract_rope import RoPE
 class SimulatedRoPE(RoPE):
     def build_freq_cis(self, seq_len: int, start_idx: int = 0):
         pos_ids = self._get_pos_ids(seq_len, start_idx)
-        phase = torch.outer(pos_ids, self.freqs).float()
+        phase = torch.outer(pos_ids, self.freqs)
         return self.polar_in_real(torch.ones_like(phase), phase)
 
     def apply_rotary(self, x: torch.Tensor, freq_cis: torch.Tensor, seq_len_dim_idx: int = 2, head_dim_idx: int = 3):

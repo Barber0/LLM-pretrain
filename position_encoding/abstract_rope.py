@@ -32,7 +32,8 @@ class RoPE(nn.Module):
     def _get_pos_ids(self, seq_len: int, start_idx: int = 0):
         pos_ids = torch.arange(
             start_idx, start_idx + seq_len,
-            device=self.freqs.device
+            device=self.freqs.device,
+            dtype=self.freqs.dtype,
         )
         if self._interpolate_factor > 1:
             return pos_ids / self._interpolate_factor

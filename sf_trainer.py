@@ -84,11 +84,11 @@ class SFTrainer:
                 if os.path.exists(model_path):
                     ckpt = torch.load(model_path)
                     if args.deepspeed_module_key in ckpt:
-                        model.load_state_dict(ckpt[args.deepspeed_module_key])
+                        result = model.load_state_dict(ckpt[args.deepspeed_module_key], strict=False)
                     else:
-                        model.load_state_dict(ckpt)
+                        result = model.load_state_dict(ckpt, strict=False)
 
-                    logger.info('Model loaded: %s', model_path)
+                    logger.info('Model loaded: %s; Missing: %s; Unexpected: %s', model_path, result.missing_keys, result.unexpected_keys)
                 else:
                     logger.warn('Model not found: %s', model_path)
 
