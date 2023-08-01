@@ -185,6 +185,8 @@ class SFTrainer:
             '[V] ep: %d, batch: %d, calc_time: %.2f, loss: %f',
             ep, bidx, validate_time, avg_validate_loss
         )
+        self.escape_from_exception(ep, bidx, lambda: self.tb_writer.add_scalar(
+            'Validation Loss', avg_validate_loss, bidx))
 
     def period_log(
         self,
