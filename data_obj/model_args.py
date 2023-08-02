@@ -20,3 +20,4 @@ class ModelArgs:
     position_encoding: PositionEmbeddingType = PositionEmbeddingType.COMPLEX_ROPE
     rope_interpolate_factor: float = 1.
     rope_theta: float = 1e4
+    reuse_emb: bool = False

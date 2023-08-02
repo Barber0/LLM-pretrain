@@ -5,34 +5,35 @@ script_dir=$(dirname "$script_path")
 proj_home_dir=$script_dir/..
 cd $proj_home_dir
 
-export NCCL_P2P_DISABLE=1
+# export NCCL_P2P_DISABLE=1
 
-GPUS=3
+GPUS=2
 
 MODEL_ARGS="
     --hidden_states 3584 \
     --n_heads 32 \
     --n_layers 25 \
     --max_len 1024 \
-    --ext_factor 1 \
-    --position_encoding SIMULATED_ROPE 
+    --ext_factor 1 
 "
 
 PROG_ARGS="
-    --deepspeed_cfg ./config/ds_cfg_pt3.json \
-    --train_path /root/autodl-tmp/pile00-parsed \
-    --validate_path /root/autodl-tmp/pile02-parsed \
+    --deepspeed_cfg ./config/ds_cfg_pretrain.json \
+    --train_path /root/autodl-tmp/pile03-parsed \
+    --validate_path /root/autodl-tmp/pile04-parsed \
     --tokenizer_path ./tokenizer \
     --tensorboard_path /root/tf-logs \
     --log_path ./tmp/train.log 
 "
 
 TRAIN_ARGS="
-    --start_batch 0 \
+    --start_batch 1200 \
+    --save_period 1000 \
+    --validate_period 600 \
+    --replicate_period 5000 \
     --deepspeed_ckpt_tag main \
     --deepspeed_ckpt_home /root/autodl-tmp/myllm5-rope-flash-pile-1klen-pile00 \
-    --torch_ckpt_home /root/autodl-tmp/model-arch \
-    --torch_ckpt_tag main-18000-29400
+    --torch_ckpt_tag sfllm-pile00-1m
 "
 
 deepspeed \

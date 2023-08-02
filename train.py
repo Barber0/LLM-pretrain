@@ -23,6 +23,24 @@ def set_random_seed(seed):
 seed = 168
 set_random_seed(seed)
 
+def fix_grad(model, logger):
+    for param in model.parameters():
+        param.requires_grad = False
+        
+    for i in range(-2, 0):
+        for param in model.blocks[i].parameters():
+            param.requires_grad = True
+        
+    for param in model.ln.parameters():
+        param.requires_grad = True
+    
+    param_grad_info = ['']
+    for name, module in model.named_modules():
+        for param_name, param in module.named_parameters():
+            param_grad_info.append(f"Layer: {name} Parameter: {param_name} requires_grad: {param.requires_grad}")
+            
+    logger.info('\n'.join(param_grad_info))
+
 
 def compute_loss_fn(
     eng: ModelType,
@@ -76,6 +94,7 @@ def main(
             None,
             logger
         )
+        
 
     train_set = load_from_disk(prog_args.train_path)
 

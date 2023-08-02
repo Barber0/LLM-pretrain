@@ -273,6 +273,7 @@ class SFLLM(nn.Module):
             raise Exception(
                 f'Unsupported position embedding: {args_pos_emb}')
 
+        assert self.args.hidden_states % self.args.n_heads == 0
         head_states = self.args.hidden_states // self.args.n_heads
         self.rope_emb = rope_constructor(
             head_states,
@@ -300,13 +301,18 @@ class SFLLM(nn.Module):
         ])
 
         self.ln = LayerNorm(self.args.hidden_states)
-        self.decoder = nn.Linear(
-            self.args.hidden_states, self.vocab_size, bias=False)
+        
+        self.decoder = None
+        if not self.args.reuse_emb:
+            self.decoder = nn.Linear(
+                self.args.hidden_states, self.vocab_size, bias=False)
+            
         self.loss_fn = CELoss(ignore_index=self.pad_token_id)
 
     @staticmethod
     def create_mask(max_len):
         return 1 - torch.triu(torch.ones((1, 1, max_len, max_len)), diagonal=1)
+    
 
     def forward(
         self,
@@ -327,7 +333,11 @@ class SFLLM(nn.Module):
             next_prefix_kv_list.append(next_prefix_kv)
 
         ln_out = self.ln(data_block.x)
-        y_pred = self.decoder(ln_out)
+        
+        if self.decoder is None:
+            y_pred = torch.matmul(ln_out, self.emb.weight.transpose(0, 1))
+        else:
+            y_pred = self.decoder(ln_out)
 
         if target_ids is None:
             return y_pred, next_prefix_kv_list
@@ -338,6 +348,9 @@ class SFLLM(nn.Module):
         )
 
     def pipeline_and_loss_fn(self):
+        if self.decoder is None:
+            raise Exception("Decoder(Linear) not found.")
+            
         return nn.Sequential(nn.ModuleList([self.vocab_emb] + [block for block in self.blocks] + [
             self.layerNorm,
             self.decoder
