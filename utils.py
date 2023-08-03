@@ -26,11 +26,6 @@ def build_logger(
     fh.setLevel(level)
     fh.setFormatter(formatter)
     logger.addHandler(fh)
-    
-    sh = logging.StreamHandler()
-    sh.setLevel(level)
-    sh.setFormatter(formatter)
-    logger.addHandler(sh)
 
     return logger
 
