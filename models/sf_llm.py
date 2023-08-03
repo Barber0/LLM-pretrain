@@ -196,10 +196,10 @@ class SFEmbedding(nn.Embedding):
 
         mask = None
         if generate:
-            mask = (input != self.pad_token_id).int()
+            mask = (input != self.pad_token_id)
             if start_idx > 0:
                 mask = torch.cat((
-                    torch.ones(mask.size(0), start_idx),
+                    torch.ones(mask.size(0), start_idx, device=mask.device).bool(),
                     mask,
                 ), dim=-1)
             mask = repeat(mask, 'b n -> b 1 q n', q=seq_len)
@@ -307,7 +307,7 @@ class SFLLM(nn.Module):
 
     @staticmethod
     def create_mask(max_len):
-        return 1 - torch.triu(torch.ones((1, 1, max_len, max_len)), diagonal=1)
+        return (1 - torch.triu(torch.ones((1, 1, max_len, max_len)), diagonal=1)).bool()
 
     def forward(
         self,
