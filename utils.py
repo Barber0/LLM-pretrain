@@ -15,18 +15,23 @@ def build_logger(
     name,
     log_filename,
     level=logging.INFO,
-    str_format='%(asctime)s [%(levelname)s] %(message)s'
+    str_format='%(asctime)s [%(levelname)s] %(message)s',
 ):
     logger = logging.getLogger(name)
     logger.setLevel(level)
     
+    formatter = logging.Formatter(str_format)
+    
     fh = logging.FileHandler(log_filename)
     fh.setLevel(level)
-
-    formatter = logging.Formatter(str_format)
     fh.setFormatter(formatter)
-
     logger.addHandler(fh)
+    
+    sh = logging.StreamHandler()
+    sh.setLevel(level)
+    sh.setFormatter(formatter)
+    logger.addHandler(sh)
+
     return logger
 
 
