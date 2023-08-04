@@ -169,7 +169,7 @@ class SFTrainer:
         self.model.eval()
         validate_loss_list = []
         with torch.no_grad():
-            for bidx in range(self.args.validate_batch_num):
+            for _ in range(self.args.validate_batch_num):
                 batch = self.get_next_validate_batch()
                 x, y = self.batch_collate_fn(batch)
                 loss = self.compute_loss_fn(

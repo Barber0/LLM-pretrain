@@ -120,7 +120,7 @@ def main(
     train_args.batch_size = get_micro_batch_size()
     train_args.grad_accum_period = get_grad_accum_steps()
 
-    validate_set = load_from_disk(prog_args.validate_path).shuffle()
+    validate_set = load_from_disk(prog_args.validate_path).shuffle(seed=train_args.start_batch)
     validate_loader = DataLoader(
         validate_set,
         batch_size=train_args.batch_size,
