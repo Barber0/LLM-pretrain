@@ -25,9 +25,9 @@ class RoPE(nn.Module):
         self._theta = theta
         self._max_len = max_len
         self._ext_factor = ext_factor
-        self._precompute_phase()
+        self._ensure_emb_table()
 
-    def _precompute_phase(self):
+    def _ensure_emb_table(self):
         freqs = 1.0 / (self._theta ** (
             torch.arange(0, self._hidden_states, 2)
             [: self._hidden_states // 2].float() / self._hidden_states))
@@ -39,16 +39,21 @@ class RoPE(nn.Module):
             ) / self._interpolate_factor
         else:
             pos_ids = torch.arange(0, self._max_len*self._ext_factor)
-        self.phase = nn.parameter.Parameter(
-            torch.outer(pos_ids, freqs), requires_grad=False)
+        phase = torch.outer(pos_ids, freqs)
+        self.emb_table = nn.parameter.Parameter(
+            self._polar(torch.ones_like(phase), phase), requires_grad=False)
+
+    def _polar(self, mag, phase):
+        return torch.polar(mag, phase)
 
     def get_embedding_table(self, seq_len: int, start_idx: int):
-        return self.phase[start_idx:start_idx+seq_len]
+        self._ensure_emb_table()
+        return self.emb_table[start_idx:start_idx+seq_len]
 
     def apply_rotary(
         self,
         x: torch.Tensor,
-        phase: torch.Tensor,
+        emb_table: torch.Tensor,
         seq_len_dim_idx: int = 2,
         head_dim_idx: int = 3
     ):

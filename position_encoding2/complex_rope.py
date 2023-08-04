@@ -1,6 +1,7 @@
 import torch
-from abstract_rope import RoPE
 from torch import Tensor
+
+from .abstract_rope import RoPE
 
 
 class ComplexRoPE(RoPE):

@@ -1,8 +1,15 @@
 import torch
-from complex_rope import ComplexRoPE
+
+from .complex_rope import ComplexRoPE
 
 
 class SimulatedRoPE(ComplexRoPE):
+    def _polar(self, magnitude, phase):
+        real_part = magnitude * torch.cos(phase)
+        imag_part = magnitude * torch.sin(phase)
+        real_tensor = torch.stack((real_part, imag_part), dim=-1)
+        return real_tensor
+
     def apply_rotary(self, x: torch.Tensor, emb_table: torch.Tensor, seq_len_dim_idx: int = 2, head_dim_idx: int = 3):
         x_ = self._real_to_complex(x)
         emb_table = self._reshape_as_broadcast(
@@ -16,13 +23,6 @@ class SimulatedRoPE(ComplexRoPE):
         result_real = a_real * b_real - a_imag * b_imag
         result_imag = a_real * b_imag + a_imag * b_real
         return torch.stack([result_real, result_imag], dim=-1)
-
-    @staticmethod
-    def _polar_in_real(magnitude, phase):
-        real_part = magnitude * torch.cos(phase)
-        imag_part = magnitude * torch.sin(phase)
-        real_tensor = torch.stack((real_part, imag_part), dim=-1)
-        return real_tensor
 
     @staticmethod
     def _reshape_as_broadcast(emb_table, x, seq_len_dim_idx, head_dim_idx):
