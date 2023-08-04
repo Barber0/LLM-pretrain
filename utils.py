@@ -85,7 +85,7 @@ def convert_batch_to_ids(
     base_ids = tokenizer.batch_encode_plus(
         pure_txt_list,
         max_length=max_len * ext_factor + 1,
-        padding='max_length',
+        padding=True,
         truncation=True,
         return_tensors='pt'
     ).input_ids

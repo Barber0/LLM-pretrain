@@ -1,5 +1,5 @@
 {
-    "gradient_accumulation_steps": 50,
+    "gradient_accumulation_steps": 30,
     "train_micro_batch_size_per_gpu": 7,
     "gradient_clipping": 1.0,
     "optimizer": {
@@ -17,10 +17,10 @@
     "scheduler": {
         "type": "WarmupDecayLR",
         "params": {
-            "total_num_steps": 1000,
+            "total_num_steps": 4000,
             "warmup_min_lr": 1e-6,
-            "warmup_max_lr": 1.5e-5,
-            "warmup_num_steps": 50
+            "warmup_max_lr": 9.7e-5,
+            "warmup_num_steps": 400
         }
     },
     "fp16": {

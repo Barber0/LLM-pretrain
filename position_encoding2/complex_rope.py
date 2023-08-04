@@ -13,8 +13,9 @@ class ComplexRoPE(RoPE):
         head_dim_idx: int = 3
     ):
         x_ = self._real_to_complex(x.float())
+        phase_float = phase.float()
         emb_table = self._reshape_as_broadcast(
-            torch.polar(torch.ones_like(phase), phase),
+            torch.polar(torch.ones_like(phase_float), phase_float),
             x_,
             seq_len_dim_idx,
             head_dim_idx
