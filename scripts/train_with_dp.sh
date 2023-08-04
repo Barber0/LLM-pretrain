@@ -18,22 +18,24 @@ MODEL_ARGS="
 "
 
 PROG_ARGS="
-    --deepspeed_cfg ./config/ds_cfg_pretrain.json \
-    --train_path /root/autodl-tmp/pile03-parsed \
-    --validate_path /root/autodl-tmp/pile04-parsed \
+    --deepspeed_cfg ./config/ds_cfg_finetune.json \
+    --train_path /root/autodl-tmp/orca_train \
+    --validate_path /root/autodl-tmp/orca_vali \
     --tokenizer_path ./tokenizer \
     --tensorboard_path /root/tf-logs \
     --log_path ./tmp/train.log 
 "
 
 TRAIN_ARGS="
-    --start_batch 53500 \
+    --start_batch 0 \
+    --validate_batch_num 30 \
     --save_period 500 \
     --validate_period 500 \
     --replicate_period 5000 \
     --deepspeed_ckpt_tag main \
-    --deepspeed_ckpt_home /root/autodl-tmp/sfllm-4B \
-    --torch_ckpt_tag SFLLM-4B-50k
+    --deepspeed_ckpt_home /root/autodl-tmp/sfllm-4B-finetune2 \
+    --torch_ckpt_home /root/autodl-tmp/sfllm-4B/main \
+    --torch_ckpt_tag sfllm-4B-pile03-68k
 "
 
 deepspeed \
