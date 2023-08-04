@@ -14,7 +14,9 @@ This project aims to simplify the process of pretraining and fine-tuning, provid
 
 - Provides pretraining scripts for training language models from large-scale text data.
 - Implements a GPT-like large language model using PyTorch.
-- Provides distributed pretraining scripts that support training techniques such as Tensor Parallelism and Pipeline Parallelism.
+- Provides distributed pretraining scripts that support training techniques such as Data Parallelism.
+- Provides support for FlashAttention to accelerate training.
+- Apply RoPE as the position embedding. Implement a simulated complex RoPE based on real FP16, let the scripts and models can run in TPU.
 
 ## Getting Started
 
@@ -22,14 +24,14 @@ To get started with this project, follow these steps:
 
 1. Clone this project to your local machine: `git clone https://github.com/Barber0/LLM-pretrain.git`
 2. Install the required dependencies: `pip install transformers tokenizers datasets deepspeed`
-3. Run the pretraining script to train the language model: `deepspeed --num_gpus=1 myllm_train.py`
+3. (**Optional**) Install FlashAttention: `pip install flash-attn --no-build-isolation`
+4. Run the pretraining script to train the language model: `./scripts/train_with_dp.sh`
 
 Please note that to successfully run the pretraining and fine-tuning scripts, you need to prepare appropriate training datasets and set the corresponding paths and parameters in the configuration file. Several DataLoader options are provided for the following datasets:
 
-1. [HuggingFaceH4/self_instruct](https://huggingface.co/datasets/HuggingFaceH4/self_instruct)
-2. [WebText](https://huggingface.co/datasets/openwebtext)
-3. [Bookcorpus](https://huggingface.co/datasets/bookcorpus)
-4. [Wikipedia](https://huggingface.co/datasets/wikipedia)
+1. [EleutherAI/pile](https://huggingface.co/datasets/EleutherAI/pile)
+2. [YeungNLP/ultrachat](https://huggingface.co/datasets/YeungNLP/ultrachat)
+3. [Open-Orca/OpenOrca](https://huggingface.co/datasets/Open-Orca/OpenOrca)
 
 ## License
 

@@ -68,14 +68,13 @@ class Attention(nn.Module):
         x: Tensor,
         freq_cis_q: Tensor,
         freq_cis_k: Tensor,
-        expanded_attn_masks: Tensor,
-        casual_mask=None,
+        mask: Tensor,
         prefix_kv=None
     ):
         head_dim_idx = 3
         qkv = self.proj(x)
         next_prefix_kv = None
-        if casual_mask is None and USE_FLASH_ATTN:
+        if mask is None and USE_FLASH_ATTN:
             seq_len_dim_idx = 1
             q, k, v = rearrange(
                 qkv, 'b n (c h d) -> c b n h d', c=3, h=self.n_heads)
@@ -101,16 +100,15 @@ class Attention(nn.Module):
 
             q = self.rope_fn(q, freq_cis_q, seq_len_dim_idx, head_dim_idx)
             k = self.rope_fn(k, freq_cis_k, seq_len_dim_idx, head_dim_idx)
-            attn_o = self.attn(q, k, v, expanded_attn_masks, casual_mask)
+            attn_o = self.attn(q, k, v, mask)
             attn_o = rearrange(attn_o, 'b h n d -> b n (h d)')
 
         return self.ff(attn_o), next_prefix_kv
 
-    def attn(self, q: Tensor, k: Tensor, v: Tensor, attn_mask: Tensor, casual_mask: Tensor):
+    def attn(self, q: Tensor, k: Tensor, v: Tensor, mask: Tensor):
         scores = torch.einsum('...qd, ...kd -> ...qk', q, k) / self.head_scale
         mask_value = torch.finfo(q.dtype).min
-        scores = scores.masked_fill(casual_mask == 0, mask_value)
-        scores = scores.masked_fill(attn_mask == 0, mask_value)
+        scores = scores.masked_fill(mask == 0, mask_value)
         scores = F.softmax(scores, dim=-1)
         scores = self.dropout(scores)
         return torch.matmul(scores, v)
@@ -121,8 +119,7 @@ class BlockData:
     x: Tensor
     freq_cis_q: Tensor
     freq_cis_k: Tensor
-    attn_mask: Tensor
-    casual_mask: Tensor
+    mask: Tensor
 
 
 class Block(nn.Module):
@@ -154,8 +151,7 @@ class Block(nn.Module):
             self.ln1(data.x),
             data.freq_cis_q,
             data.freq_cis_k,
-            data.attn_mask,
-            data.casual_mask,
+            data.mask,
             prefix_kv
         )
         data.x = data.x + attn_o
@@ -186,7 +182,7 @@ class SFEmbedding(nn.Embedding):
         self,
         input: Tensor,
         prefix_kv_list: List[Tensor] = None,
-        generate: bool = False,
+        generate: bool = not USE_FLASH_ATTN,
     ):
         emb_out = super().forward(input)
         start_idx, prefix_kv_list = self._process_prefix_kv_list(
@@ -195,27 +191,27 @@ class SFEmbedding(nn.Embedding):
         end_idx = start_idx+seq_len
 
         freq_cis_k = self.build_freq_cis_fn(end_idx, 0)
-        freq_cis_q = freq_cis_k if start_idx == 0 else self.build_freq_cis_fn(seq_len, start_idx)
-        
-        attn_mask = (input != self.pad_token_id).int()
-        if start_idx > 0:
-            attn_mask = torch.cat((
-                torch.ones(attn_mask.size(0), start_idx),
-                attn_mask,
-            ), dim=-1)
-        attn_mask = repeat(attn_mask, 'b n -> b 1 q n', q=seq_len)
+        freq_cis_q = freq_cis_k if start_idx == 0 else self.build_freq_cis_fn(
+            seq_len, start_idx)
 
-        casual_mask = None
+        mask = None
         if generate:
-            casual_mask = self.base_mask[..., ..., start_idx:end_idx, :end_idx].to(
+            mask = (input != self.pad_token_id)
+            if start_idx > 0:
+                mask = torch.cat((
+                    torch.ones(mask.size(0), start_idx, device=mask.device).bool(),
+                    mask,
+                ), dim=-1)
+            mask = repeat(mask, 'b n -> b 1 q n', q=seq_len)
+
+            mask = mask & self.base_mask[..., start_idx:end_idx, :end_idx].to(
                 input.device)
 
         return BlockData(
             x=emb_out,
             freq_cis_q=freq_cis_q,
             freq_cis_k=freq_cis_k,
-            attn_mask=attn_mask,
-            casual_mask=casual_mask
+            mask=mask
         ), prefix_kv_list
 
     def forward(
@@ -301,18 +297,17 @@ class SFLLM(nn.Module):
         ])
 
         self.ln = LayerNorm(self.args.hidden_states)
-        
+
         self.decoder = None
         if not self.args.reuse_emb:
             self.decoder = nn.Linear(
                 self.args.hidden_states, self.vocab_size, bias=False)
-            
+
         self.loss_fn = CELoss(ignore_index=self.pad_token_id)
 
     @staticmethod
     def create_mask(max_len):
-        return 1 - torch.triu(torch.ones((1, 1, max_len, max_len)), diagonal=1)
-    
+        return (1 - torch.triu(torch.ones((1, 1, max_len, max_len)), diagonal=1)).bool()
 
     def forward(
         self,
@@ -329,11 +324,12 @@ class SFLLM(nn.Module):
 
         next_prefix_kv_list = []
         for block, prefix_kv in zip(self.blocks, prefix_kv_list):
-            data_block, next_prefix_kv = block.forward_with_prefix(data_block, prefix_kv)
+            data_block, next_prefix_kv = block.forward_with_prefix(
+                data_block, prefix_kv)
             next_prefix_kv_list.append(next_prefix_kv)
 
         ln_out = self.ln(data_block.x)
-        
+
         if self.decoder is None:
             y_pred = torch.matmul(ln_out, self.emb.weight.transpose(0, 1))
         else:
@@ -350,7 +346,7 @@ class SFLLM(nn.Module):
     def pipeline_and_loss_fn(self):
         if self.decoder is None:
             raise Exception("Decoder(Linear) not found.")
-            
+
         return nn.Sequential(nn.ModuleList([self.vocab_emb] + [block for block in self.blocks] + [
             self.layerNorm,
             self.decoder

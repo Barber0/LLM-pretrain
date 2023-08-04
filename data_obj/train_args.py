@@ -1,5 +1,6 @@
-from dataclasses import dataclass
 import os
+from dataclasses import dataclass
+
 
 @dataclass
 class TrainArgs:
@@ -8,17 +9,18 @@ class TrainArgs:
 
     start_batch: int = 0
     start_epoch: int = 0
-    
+
     batch_size: int = 4
     grad_accum_period: int = 30
+    lr: float = 1e5
 
     epochs: int = 1
     log_period: int = 50
     save_period: int = 300
-    
+
     validate_period: int = 200
     validate_batch_num: int = 15
-    
+
     replicate_period: int = 3000
 
     deepspeed_ckpt_home: str = None
@@ -27,5 +29,5 @@ class TrainArgs:
     torch_ckpt_home: str = None
     torch_ckpt_tag: str = None
     torch_ckpt_opt_prefix: str = 'optim'
-    
+
     deepspeed_module_key: str = 'module'
