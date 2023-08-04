@@ -170,13 +170,13 @@ class SFEmbedding(nn.Embedding):
         pad_token_id: int,
         n_layers: int,
         base_mask: torch.Tensor,
-        get_emb_table_fn: RoPE.EmbTableGetterType
+        get_phase_table_fn: RoPE.PhaseTableGetterType
     ):
         super().__init__(num_embeddings, embedding_dim)
         self.pad_token_id = pad_token_id
         self.n_layers = n_layers
         self.base_mask = base_mask
-        self.get_emb_table_fn = get_emb_table_fn
+        self.get_phase_table_fn = get_phase_table_fn
 
     def forward_with_prefix(
         self,
@@ -190,8 +190,8 @@ class SFEmbedding(nn.Embedding):
         seq_len = input.size(-1)
         end_idx = start_idx+seq_len
 
-        emb_table_k = self.get_emb_table_fn(end_idx, 0)
-        emb_table_q = emb_table_k if start_idx == 0 else self.get_emb_table_fn(
+        emb_table_k = self.get_phase_table_fn(end_idx, 0)
+        emb_table_q = emb_table_k if start_idx == 0 else self.get_phase_table_fn(
             seq_len, start_idx)
 
         mask = None
@@ -285,7 +285,7 @@ class SFLLM(nn.Module):
             self.pad_token_id,
             self.args.n_layers,
             self.create_mask(self.args.max_len * self.args.ext_factor),
-            self.rope_emb.get_embedding_table
+            self.rope_emb.get_phase_table
         )
 
         self.blocks = nn.ModuleList([

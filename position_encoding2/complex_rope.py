@@ -8,13 +8,17 @@ class ComplexRoPE(RoPE):
     def apply_rotary(
         self,
         x: Tensor,
-        emb_table: Tensor,
+        phase: Tensor,
         seq_len_dim_idx: int = 2,
         head_dim_idx: int = 3
     ):
         x_ = self._real_to_complex(x.float())
         emb_table = self._reshape_as_broadcast(
-            emb_table, x_, seq_len_dim_idx, head_dim_idx)
+            torch.polar(torch.ones_like(phase), phase),
+            x_,
+            seq_len_dim_idx,
+            head_dim_idx
+        )
         return self._complex_to_real(emb_table * x_).type_as(x)
 
     @staticmethod
