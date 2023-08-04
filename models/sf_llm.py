@@ -9,7 +9,7 @@ from einops import rearrange, repeat
 from torch import Tensor
 
 from data_obj.model_args import ModelArgs, PositionEmbeddingType
-from position_encoding import RoPE
+from position_encoding2 import RoPE
 
 try:
     from flash_attn import flash_attn_func
@@ -66,8 +66,8 @@ class Attention(nn.Module):
     def forward(
         self,
         x: Tensor,
-        freq_cis_q: Tensor,
-        freq_cis_k: Tensor,
+        emb_table_q: Tensor,
+        emb_table_k: Tensor,
         mask: Tensor,
         prefix_kv=None
     ):
@@ -78,8 +78,8 @@ class Attention(nn.Module):
             seq_len_dim_idx = 1
             q, k, v = rearrange(
                 qkv, 'b n (c h d) -> c b n h d', c=3, h=self.n_heads)
-            q = self.rope_fn(q, freq_cis_q, seq_len_dim_idx, head_dim_idx)
-            k = self.rope_fn(k, freq_cis_k, seq_len_dim_idx, head_dim_idx)
+            q = self.rope_fn(q, emb_table_q, seq_len_dim_idx, head_dim_idx)
+            k = self.rope_fn(k, emb_table_k, seq_len_dim_idx, head_dim_idx)
             attn_o = flash_attn_func(
                 q,
                 k,
@@ -98,8 +98,8 @@ class Attention(nn.Module):
                 v = torch.cat((pv, v), dim=seq_len_dim_idx)
             next_prefix_kv = torch.stack((k, v))
 
-            q = self.rope_fn(q, freq_cis_q, seq_len_dim_idx, head_dim_idx)
-            k = self.rope_fn(k, freq_cis_k, seq_len_dim_idx, head_dim_idx)
+            q = self.rope_fn(q, emb_table_q, seq_len_dim_idx, head_dim_idx)
+            k = self.rope_fn(k, emb_table_k, seq_len_dim_idx, head_dim_idx)
             attn_o = self.attn(q, k, v, mask)
             attn_o = rearrange(attn_o, 'b h n d -> b n (h d)')
 
@@ -117,8 +117,8 @@ class Attention(nn.Module):
 @dataclass
 class BlockData:
     x: Tensor
-    freq_cis_q: Tensor
-    freq_cis_k: Tensor
+    emb_table_q: Tensor
+    emb_table_k: Tensor
     mask: Tensor
 
 
@@ -149,8 +149,8 @@ class Block(nn.Module):
     ):
         attn_o, prefix_kv = self.attn.forward(
             self.ln1(data.x),
-            data.freq_cis_q,
-            data.freq_cis_k,
+            data.emb_table_q,
+            data.emb_table_k,
             data.mask,
             prefix_kv
         )
@@ -170,13 +170,13 @@ class SFEmbedding(nn.Embedding):
         pad_token_id: int,
         n_layers: int,
         base_mask: torch.Tensor,
-        build_freq_cis_fn: RoPE.FreqCisBuilderType
+        get_emb_table_fn: RoPE.EmbTableGetterType
     ):
         super().__init__(num_embeddings, embedding_dim)
         self.pad_token_id = pad_token_id
         self.n_layers = n_layers
         self.base_mask = base_mask
-        self.build_freq_cis_fn = build_freq_cis_fn
+        self.get_emb_table_fn = get_emb_table_fn
 
     def forward_with_prefix(
         self,
@@ -190,8 +190,8 @@ class SFEmbedding(nn.Embedding):
         seq_len = input.size(-1)
         end_idx = start_idx+seq_len
 
-        freq_cis_k = self.build_freq_cis_fn(end_idx, 0)
-        freq_cis_q = freq_cis_k if start_idx == 0 else self.build_freq_cis_fn(
+        emb_table_k = self.get_emb_table_fn(end_idx, 0)
+        emb_table_q = emb_table_k if start_idx == 0 else self.get_emb_table_fn(
             seq_len, start_idx)
 
         mask = None
@@ -199,7 +199,8 @@ class SFEmbedding(nn.Embedding):
             mask = (input != self.pad_token_id)
             if start_idx > 0:
                 mask = torch.cat((
-                    torch.ones(mask.size(0), start_idx, device=mask.device).bool(),
+                    torch.ones(mask.size(0), start_idx,
+                               device=mask.device).bool(),
                     mask,
                 ), dim=-1)
             mask = repeat(mask, 'b n -> b 1 q n', q=seq_len)
@@ -209,8 +210,8 @@ class SFEmbedding(nn.Embedding):
 
         return BlockData(
             x=emb_out,
-            freq_cis_q=freq_cis_q,
-            freq_cis_k=freq_cis_k,
+            emb_table_q=emb_table_q,
+            emb_table_k=emb_table_k,
             mask=mask
         ), prefix_kv_list
 
@@ -257,14 +258,11 @@ class SFLLM(nn.Module):
         assert self.args is not None
         args_pos_emb = self.args.position_encoding
         if args_pos_emb == PositionEmbeddingType.COMPLEX_ROPE:
-            from position_encoding import ComplexRoPE
+            from position_encoding2 import ComplexRoPE
             rope_constructor = ComplexRoPE
         elif args_pos_emb == PositionEmbeddingType.SIMULATED_ROPE:
-            from position_encoding import SimulatedRoPE
+            from position_encoding2 import SimulatedRoPE
             rope_constructor = SimulatedRoPE
-        elif args_pos_emb == PositionEmbeddingType.LUCIDRAINS_ROPE:
-            from position_encoding import LucidrainsRoPE
-            rope_constructor = LucidrainsRoPE
         else:
             raise Exception(
                 f'Unsupported position embedding: {args_pos_emb}')
@@ -272,9 +270,11 @@ class SFLLM(nn.Module):
         assert self.args.hidden_states % self.args.n_heads == 0
         head_states = self.args.hidden_states // self.args.n_heads
         self.rope_emb = rope_constructor(
-            head_states,
-            self.args.rope_interpolate_factor,
-            self.args.rope_theta,
+            hidden_states=head_states,
+            interpolate_factor=self.args.rope_interpolate_factor,
+            theta=self.args.rope_theta,
+            max_len=self.args.max_len,
+            ext_factor=self.args.ext_factor
         )
 
     def _build_model(self):
@@ -285,7 +285,7 @@ class SFLLM(nn.Module):
             self.pad_token_id,
             self.args.n_layers,
             self.create_mask(self.args.max_len * self.args.ext_factor),
-            self.rope_emb.build_freq_cis
+            self.rope_emb.get_embedding_table
         )
 
         self.blocks = nn.ModuleList([

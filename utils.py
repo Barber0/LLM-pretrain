@@ -19,9 +19,9 @@ def build_logger(
 ):
     logger = logging.getLogger(name)
     logger.setLevel(level)
-    
+
     formatter = logging.Formatter(str_format)
-    
+
     fh = logging.FileHandler(log_filename)
     fh.setLevel(level)
     fh.setFormatter(formatter)
@@ -31,27 +31,28 @@ def build_logger(
 
 
 def add_arguments_from_dataclass(
-    parser: ArgumentParser, 
+    parser: ArgumentParser,
     dataclass_instance
 ):
     dataclass_dict = asdict(dataclass_instance)
     for key, value in dataclass_dict.items():
         val_type = str if value is None else type(value)
         if val_type is PositionEmbeddingType:
-            parser.add_argument(f'--{key}', type=val_type, choices=list(PositionEmbeddingType), default=value)
+            parser.add_argument(
+                f'--{key}', type=val_type, choices=list(PositionEmbeddingType), default=value)
         elif val_type is bool:
-            if value:
-                parser.add_argument(f'--{key}', action='store_false')
-            else:
-                parser.add_argument(f'--{key}', action='store_true')
+            parser.add_argument(
+                f'--{key}', action='store_false' if value else 'store_true')
         else:
             parser.add_argument(f'--{key}', type=val_type, default=value)
 
 
 def parse_to_dataclass(dataclass_type, args):
     args_dict = vars(args)
-    dataclass_fields = {field.name: field.type for field in fields(dataclass_type)}
-    filtered_args_dict = {key: value for key, value in args_dict.items() if key in dataclass_fields}
+    dataclass_fields = {
+        field.name: field.type for field in fields(dataclass_type)}
+    filtered_args_dict = {key: value for key,
+                          value in args_dict.items() if key in dataclass_fields}
     return dataclass_type(**filtered_args_dict)
 
 
@@ -73,11 +74,11 @@ def prepare_tokenizer(tkn_path):
     VOCAB_SIZE = tkn.vocab_size
     return tkn, VOCAB_SIZE
 
-    
+
 def convert_batch_to_ids(
-    tokenizer, 
-    pure_txt_list, 
-    max_len, 
+    tokenizer,
+    pure_txt_list,
+    max_len,
     ext_factor,
     device
 ):
@@ -88,8 +89,6 @@ def convert_batch_to_ids(
         truncation=True,
         return_tensors='pt'
     ).input_ids
-    # base_ids, x_attn_mask = x_encoded['input_ids'], x_encoded['attention_mask']
-    # batch_avg_ntokens = x_attn_mask.sum() / x_attn_mask.size(0)
     input_ids = base_ids[..., :-1]
     target_ids = base_ids[..., 1:]
     return input_ids.to(device), target_ids.to(device)
