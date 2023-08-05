@@ -27,15 +27,13 @@ PROG_ARGS="
 "
 
 TRAIN_ARGS="
-    --start_batch 68500 \
-    --validate_batch_num 30 \
+    --start_batch 97500 \
     --save_period 500 \
     --validate_period 500 \
     --replicate_period 5000 \
     --deepspeed_ckpt_tag main \
-    --deepspeed_ckpt_home /root/autodl-tmp/sfllm-4B-2 \
-    --torch_ckpt_home /root/autodl-tmp/sfllm-4B/main/ \
-    --torch_ckpt_tag sfllm-4B-pile03-68k
+    --deepspeed_ckpt_home /root/autodl-tmp/sfllm-4B-3 \
+    --torch_ckpt_tag main-0_76500
 "
 
 deepspeed \
