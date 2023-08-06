@@ -1,11 +1,11 @@
 {
-    "gradient_accumulation_steps": 50,
-    "train_micro_batch_size_per_gpu": 7,
+    "gradient_accumulation_steps": 32,
+    "train_micro_batch_size_per_gpu": 6,
     "gradient_clipping": 1.0,
     "optimizer": {
         "type": "AdamW",
         "params": {
-            "lr": 1e-7,
+            "lr": 9.7e-6,
             "weight_decay": 0.01,
             "betas": [
                 0.9,
@@ -17,14 +17,14 @@
     "scheduler": {
         "type": "WarmupDecayLR",
         "params": {
-            "total_num_steps": 4000,
-            "warmup_min_lr": 1e-7,
-            "warmup_max_lr": 2e-6,
-            "warmup_num_steps": 400
+            "total_num_steps": 13500,
+            "warmup_min_lr": 9.7e-6,
+            "warmup_max_lr": 9.7e-5,
+            "warmup_num_steps": 2600
         }
     },
     "fp16": {
-	"enabled": true
+        "enabled": true
     },
     "zero_optimization": {
         "stage": 2,

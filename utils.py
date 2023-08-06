@@ -14,9 +14,10 @@ def count_parameters(model):
 def build_logger(
     name,
     log_filename,
+    local_rank,
     level=logging.INFO,
-    str_format='%(asctime)s [%(levelname)s] %(message)s',
 ):
+    str_format=f'%(asctime)s [%(levelname)s] {local_rank}: %(message)s'
     logger = logging.getLogger(name)
     logger.setLevel(level)
 
@@ -85,7 +86,7 @@ def convert_batch_to_ids(
     base_ids = tokenizer.batch_encode_plus(
         pure_txt_list,
         max_length=max_len * ext_factor + 1,
-        padding=True,
+        padding='max_length',
         truncation=True,
         return_tensors='pt'
     ).input_ids

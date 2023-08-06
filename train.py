@@ -19,7 +19,6 @@ def set_random_seed(seed):
     torch.manual_seed(seed)
     torch.cuda.manual_seed_all(seed)
 
-
 seed = 168
 set_random_seed(seed)
 
@@ -70,6 +69,7 @@ def main(
     logger = build_logger(
         train_args.deepspeed_ckpt_tag,
         prog_args.log_path,
+        local_rank=train_args.local_rank,
     )
     tkn, VOCAB_SIZE = prepare_tokenizer(prog_args.tokenizer_path)
 
