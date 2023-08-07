@@ -268,7 +268,16 @@ class SFTrainer:
             real_bidx = bidx + 1
 
             stop_calc_timer = self.start_timer()
-            loss_val = self.train_one_batch(ep, real_bidx, batch)
+            try:
+                loss_val = self.train_one_batch(ep, real_bidx, batch)
+            except Exception as ex:
+                logger.warning('[T] ep: %d, batch: %d, Calculating error: %s', ep, real_bidx, ex)
+                if isinstance(self.model, DSEnginePlaceholder):
+                    self.model.zero_grad()
+                else:
+                    self.opt.zero_grad()
+                continue
+                
             period_loss_list.append(loss_val)
             period_calc_time_list.append(stop_calc_timer())
 
@@ -289,8 +298,8 @@ class SFTrainer:
             if self.args.local_rank == 0 and real_bidx % self.args.replicate_period == 0:
                 self.escape_from_exception(
                     ep,
-                    bidx,
-                    lambda: self.save_model_in_fp16(ep, bidx)
+                    real_bidx,
+                    lambda: self.save_model_in_fp16(ep, real_bidx)
                 )
 
         return real_bidx

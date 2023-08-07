@@ -15,12 +15,19 @@
         }
     },
     "scheduler": {
-        "type": "WarmupDecayLR",
+        "type": "OneCycle",
         "params": {
-            "total_num_steps": 13500,
-            "warmup_min_lr": 9.7e-6,
-            "warmup_max_lr": 8.89e-5,
-            "warmup_num_steps": 1240
+            "cycle_first_step_size": 1940,
+            "cycle_first_stair_count": 920,
+            "cycle_second_step_size": 1940,
+            "cycle_second_stair_count": 920,
+            "decay_step_size": 1000,
+            "cycle_min_lr": 9.7e-6,
+            "cycle_max_lr": 7.6e-5,
+            "decay_lr_rate": 0.95,
+            "cycle_min_mom": 0.85,
+            "cycle_max_mom": 0.99,
+            "decay_mom_rate": 0.0
         }
     },
     "fp16": {
