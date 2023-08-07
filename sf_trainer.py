@@ -13,11 +13,16 @@ from data_obj.train_args import TrainArgs
 
 try:
     from deepspeed import DeepSpeedEngine as DSEnginePlaceholder
+    from deepspeed import PipelineEngine as PipeEnginePlaceholder
 except ImportError:
     class DSEnginePlaceholder:
         pass
 
-ModelType = Union[DSEnginePlaceholder, Module]
+    class PipeEnginePlaceholder:
+        pass
+
+DSModuleType = Union[DSEnginePlaceholder, PipeEnginePlaceholder]
+ModelType = Union[DSModuleType, Module]
 
 
 class SFTrainer:
@@ -59,7 +64,7 @@ class SFTrainer:
         opt: Optimizer,
         logger: Logger
     ):
-        if isinstance(model, DSEnginePlaceholder):
+        if isinstance(model, DSModuleType):
             if not SFTrainer.validate_ckpt(args.deepspeed_ckpt_home, args.deepspeed_ckpt_tag):
                 logger.warning('Checkpoint home not found: %s/%s',
                                args.deepspeed_ckpt_home,
@@ -84,11 +89,13 @@ class SFTrainer:
                 if os.path.exists(model_path):
                     ckpt = torch.load(model_path)
                     if args.deepspeed_module_key in ckpt:
-                        result = model.load_state_dict(ckpt[args.deepspeed_module_key], strict=False)
+                        result = model.load_state_dict(
+                            ckpt[args.deepspeed_module_key], strict=False)
                     else:
                         result = model.load_state_dict(ckpt, strict=False)
 
-                    logger.info('Model loaded: %s; Missing: %s; Unexpected: %s', model_path, result.missing_keys, result.unexpected_keys)
+                    logger.info('Model loaded: %s; Missing: %s; Unexpected: %s',
+                                model_path, result.missing_keys, result.unexpected_keys)
                 else:
                     logger.warn('Model not found: %s', model_path)
 
@@ -216,7 +223,7 @@ class SFTrainer:
             self.tb_writer.flush()
 
     def save_model_in_fp16(self, ep, bidx):
-        if isinstance(self.model, DSEnginePlaceholder):
+        if isinstance(self.model, DSModuleType):
             state_dict = self.model.module.state_dict()
             ckpt_home = self.args.deepspeed_ckpt_home
         elif isinstance(self.model, Module):
@@ -237,7 +244,7 @@ class SFTrainer:
         torch.save(state_dict, save_path)
 
     def save_all_state(self, ep, bidx):
-        if isinstance(self.model, DSEnginePlaceholder):
+        if isinstance(self.model, DSModuleType):
             self.escape_from_exception(
                 ep,
                 bidx,
