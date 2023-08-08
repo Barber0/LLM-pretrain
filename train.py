@@ -57,7 +57,7 @@ class SFTrainerForDSDP(SFTrainer):
                          validate_loader, logger, tb_writer)
         self.tokenizer = tokenizer
 
-    def train_batch(self, batch):
+    def train_batch(self, bidx, batch):
         x, y = convert_batch_to_ids(
             self.tokenizer,
             batch['text'],

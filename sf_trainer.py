@@ -138,7 +138,7 @@ class SFTrainer:
         except Exception as ex:
             self.logger.warn('ep: %d, batch: %d, err: %s', ep, bidx, ex)
 
-    def train_batch(self, batch):
+    def train_batch(self, bidx, batch):
         raise Exception("Not implemented")
 
     def validate(self, ep, bidx):
@@ -298,7 +298,7 @@ class SFTrainer:
                     continue
                 stop_calc_timer = self.start_timer()
                 self.model.train()
-                loss_val = self.train_batch(batch)
+                loss_val = self.train_batch(real_bidx, batch)
                 period_loss_list.append(loss_val)
                 period_calc_time_list.append(stop_calc_timer())
 
