@@ -22,7 +22,7 @@ except ImportError:
         pass
 
 DSModuleType = Union[DSEnginePlaceholder, PipeEnginePlaceholder]
-ModelType = Union[DSModuleType, Module]
+ModelType = Union[DSEnginePlaceholder, PipeEnginePlaceholder, Module]
 
 
 class SFTrainer:
