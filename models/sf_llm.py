@@ -1,4 +1,3 @@
-import copy
 import math
 from dataclasses import dataclass
 from typing import List
@@ -215,8 +214,6 @@ class CELoss(nn.CrossEntropyLoss):
 
 
 class SFLLM(nn.Module):
-    rope_emb: RoPE
-
     def __init__(
         self,
         vocab_size: int,
@@ -253,7 +250,6 @@ class SFLLM(nn.Module):
         )
 
     def _build_model(self):
-        assert self.rope_emb is not None
         self.emb = SFEmbedding(
             self.vocab_size,
             self.args.hidden_states,
@@ -268,7 +264,7 @@ class SFLLM(nn.Module):
             Block(
                 self.args.hidden_states,
                 self.args.n_heads,
-                copy.deepcopy(base_rope_emb),
+                base_rope_emb,
             ) for _ in range(self.args.n_layers)
         ])
 
