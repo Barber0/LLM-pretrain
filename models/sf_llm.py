@@ -47,14 +47,14 @@ class Attention(nn.Module):
         self,
         hidden_states: int,
         n_heads: int,
-        rope: RoPE,
+        rope_fn,
         dropout_prob: float = 0.1
     ):
         super(Attention, self).__init__()
         self.hidden_states = hidden_states
         self.n_heads = n_heads
         self.dropout_prob = dropout_prob
-        self.rope = rope
+        self.rope_fn = rope_fn
 
         self.head_states = hidden_states // n_heads
         self.head_scale = math.sqrt(self.head_states)
@@ -77,7 +77,7 @@ class Attention(nn.Module):
             q, k, v = rearrange(
                 qkv, 'b n (c h d) -> c b n h d', c=3, h=self.n_heads)
 
-            q, k = self.rope.apply_rotary_for_qk(
+            q, k = self.rope_fn(
                 q, k, seq_len_dim_idx, head_dim_idx)
 
             attn_o = flash_attn_func(
@@ -98,7 +98,7 @@ class Attention(nn.Module):
                 v = torch.cat((pv, v), dim=seq_len_dim_idx)
             next_prefix_kv = torch.stack((k, v))
 
-            q, k = self.rope.apply_rotary_for_qk(
+            q, k = self.rope_fn(
                 q, k, seq_len_dim_idx, head_dim_idx)
 
             attn_o = self.attn(q, k, v, mask)
@@ -116,7 +116,7 @@ class Attention(nn.Module):
 
 
 class Block(nn.Module):
-    def __init__(self, hidden_states: int, n_heads: int, rope: RoPE, dropout_prob: float = 0.1):
+    def __init__(self, hidden_states: int, n_heads: int, rope_fn, dropout_prob: float = 0.1):
         super(Block, self).__init__()
         self.hidden_states = hidden_states
         self.n_heads = n_heads
@@ -125,7 +125,7 @@ class Block(nn.Module):
         self.attn = Attention(
             self.hidden_states,
             self.n_heads,
-            rope,
+            rope_fn,
             self.dropout_prob,
         )
         self.ln1 = LayerNorm(self.hidden_states)
@@ -224,6 +224,7 @@ class SFLLM(nn.Module):
         self.vocab_size = vocab_size
         self.pad_token_id = pad_token_id
         self.args = args
+        self._init_rope_emb()
         self._build_model()
 
     def _init_rope_emb(self):
@@ -241,7 +242,7 @@ class SFLLM(nn.Module):
 
         assert self.args.hidden_states % self.args.n_heads == 0
         head_states = self.args.hidden_states // self.args.n_heads
-        return rope_constructor(
+        self.rope_emb = rope_constructor(
             hidden_states=head_states,
             interpolate_factor=self.args.rope_interpolate_factor,
             theta=self.args.rope_theta,
@@ -258,13 +259,11 @@ class SFLLM(nn.Module):
             self.create_mask(self.args.max_len * self.args.ext_factor),
         )
 
-        base_rope_emb = self._init_rope_emb()
-
         self.blocks = nn.ModuleList([
             Block(
                 self.args.hidden_states,
                 self.args.n_heads,
-                base_rope_emb,
+                self.rope_emb.apply_rotary_for_qk,
             ) for _ in range(self.args.n_layers)
         ])
 
