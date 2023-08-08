@@ -152,8 +152,10 @@ class SFTrainer:
                 loss_val = self.validate_batch(self._get_next_validate_batch())
                 validate_loss_list.append(loss_val)
         validate_time = stop_validate_timer()
-        self._postprocess_for_validate(
-            ep, bidx, validate_time, validate_loss_list)
+        
+        if self.args.local_rank == 0:
+            self._postprocess_for_validate(
+                ep, bidx, validate_time, validate_loss_list)
 
     def _postprocess_for_validate(self, ep, bidx, validate_time, validate_loss_list):
         avg_validate_loss = self._list_mean(validate_loss_list, False)
@@ -258,7 +260,7 @@ class SFTrainer:
         if real_bidx % self.args.save_period == 0:
             self._save_all_state(ep, real_bidx)
 
-        if self.args.local_rank == 0 and real_bidx % self.args.validate_period == 0:
+        if real_bidx % self.args.validate_period == 0:
             self._validate(ep, real_bidx)
 
         if self.args.local_rank == 0 and real_bidx % self.args.replicate_period == 0:
