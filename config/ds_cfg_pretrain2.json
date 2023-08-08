@@ -17,9 +17,9 @@
     "scheduler": {
         "type": "WarmupDecayLR",
         "params": {
-            "total_num_steps": 13500,
+            "total_num_steps": 4000,
             "warmup_min_lr": 9.7e-6,
-            "warmup_max_lr": 8.89e-5,
+            "warmup_max_lr": 8e-5,
             "warmup_num_steps": 1240
         }
     },
