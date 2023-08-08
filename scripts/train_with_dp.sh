@@ -28,8 +28,7 @@ MODEL_ARGS="
 
 PROG_ARGS="
     --deepspeed_cfg ./config/ds_cfg_pretrain2.json \
-    --train_path /root/autodl-tmp/pile03-parsed \
-    --validate_path /root/autodl-tmp/pile04-parsed \
+    --train_path EleutherAI/pile \
     --tokenizer_path ./tokenizer \
     --tensorboard_path /root/tf-logs \
     --log_path ./tmp/train.log 
