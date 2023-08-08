@@ -17,6 +17,11 @@ cd $proj_home_dir
 # export NCCL_VERSION=2.14.3-1
 
 GPUS=2
+TB_PATH=/root/tf-logs
+LOG_HOME=./tmp
+
+mkdir -p $TB_PATH
+mkdir -p $LOG_HOME
 
 MODEL_ARGS="
     --hidden_states 3200 \
@@ -31,12 +36,12 @@ PROG_ARGS="
     --train_path /root/autodl-tmp/pile03-parsed \
     --validate_path /root/autodl-tmp/pile04-parsed \
     --tokenizer_path ./tokenizer \
-    --tensorboard_path /root/tf-logs \
-    --log_path ./tmp/train.log 
+    --tensorboard_path $TB_PATH \
+    --log_path $LOG_HOME/train.log 
 "
 
 TRAIN_ARGS="
-    --start_batch 97000 \
+    --start_batch 129500 \
     --save_period 500 \
     --validate_period 500 \
     --replicate_period 5000 \
