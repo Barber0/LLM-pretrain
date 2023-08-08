@@ -347,7 +347,8 @@ class SFLLM(nn.Module):
         if self.decoder is None:
             raise Exception("Decoder(Linear) not found.")
 
-        return nn.Sequential(nn.ModuleList([self.vocab_emb] + [block for block in self.blocks] + [
-            self.layerNorm,
+        module_list = [self.emb] + [block for block in self.blocks] + [
+            self.ln,
             self.decoder
-        ])), self.loss_fn
+        ]
+        return nn.Sequential(*module_list), self.loss_fn

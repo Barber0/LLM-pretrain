@@ -10,7 +10,7 @@ from torch.utils.tensorboard import SummaryWriter
 
 from data_obj import ModelArgs, ProgramArgs, TrainArgs
 from data_obj.train_args import TrainArgs
-from sf_trainer import ModelType, SFTrainer
+from sf_trainer import SFTrainer
 from utils import (build_logger, convert_batch_to_ids, count_parameters,
                    get_args, prepare_tokenizer)
 
@@ -94,6 +94,7 @@ def main(
     model_engine, opt, _ = deepspeed.initialize(
         model=pipe_model,
         config=prog_args.deepspeed_cfg,
+        model_parameters=[p for p in pipe_model.parameters() if p.requires_grad],
     )
 
     use_ds_ckpt = SFTrainer.validate_ckpt(
