@@ -1,7 +1,7 @@
 import os
 from logging import Logger
 from time import time
-from typing import Callable, List, Tuple, Union
+from typing import List, Union
 
 import torch
 from torch.nn import Module
@@ -35,18 +35,12 @@ class SFTrainer:
         validate_loader: DataLoader,
         logger: Logger,
         tb_writer: SummaryWriter,
-        batch_collate_fn: Callable[[List], Tuple[torch.Tensor, torch.Tensor]],
-        compute_loss_fn: Callable[[ModelType, torch.Tensor, torch.Tensor, int], torch.Tensor],
-        update_param_fn: Callable[[int, torch.Tensor, ModelType, Optimizer, int], None],
     ):
         self.args = train_args
         self.model = model
         self.opt = opt
         self.train_loader = train_loader
         self.validate_loader = validate_loader
-        self.batch_collate_fn = batch_collate_fn
-        self.compute_loss_fn = compute_loss_fn
-        self.update_param_fn = update_param_fn
         self.logger = logger
         self.tb_writer = tb_writer
 
@@ -144,32 +138,8 @@ class SFTrainer:
         except Exception as ex:
             self.logger.warn('ep: %d, batch: %d, err: %s', ep, bidx, ex)
 
-    def train_one_batch(self, ep, bidx, batch):
-        self.model.train()
-        x, y = self.batch_collate_fn(batch)
-        loss = self.compute_loss_fn(
-            self.model,
-            x,
-            y,
-            self.args.grad_accum_period,
-        )
-
-        if self.args.local_rank == 0:
-            self.escape_from_exception(
-                ep,
-                bidx,
-                lambda: self.tb_writer.add_scalar(
-                    'Train Loss', loss.item(), bidx)
-            )
-
-        self.update_param_fn(
-            bidx,
-            loss,
-            self.model,
-            self.opt,
-            self.args.grad_accum_period,
-        )
-        return loss.item()
+    def train_batch(self, batch):
+        raise Exception("Not implemented")
 
     def validate(self, ep, bidx):
         stop_validate_timer = self.start_timer()
@@ -262,42 +232,82 @@ class SFTrainer:
             self.escape_from_exception(ep, bidx,
                                        lambda: self.save_optimizer(ep, bidx))
 
-    def train_one_epoch(self, ep=0):
-        data_iter = iter(self.train_loader)
+    def _postprocess(
+        self,
+        ep,
+        real_bidx,
+        loss_val,
+        period_loss_list,
+        period_calc_time_list,
+    ):
+        if self.args.local_rank == 0:
+            self.escape_from_exception(
+                ep,
+                real_bidx,
+                lambda: self.tb_writer.add_scalar(
+                    'Train Loss', loss_val, real_bidx)
+            )
 
+        if real_bidx % self.args.log_period == 0:
+            self.period_log(
+                ep,
+                real_bidx,
+                period_loss_list,
+                period_calc_time_list
+            )
+
+        if real_bidx % self.args.save_period == 0:
+            self.save_all_state(ep, real_bidx)
+
+        if self.args.local_rank == 0 and real_bidx % self.args.validate_period == 0:
+            self.validate(ep, real_bidx)
+
+        if self.args.local_rank == 0 and real_bidx % self.args.replicate_period == 0:
+            self.escape_from_exception(
+                ep,
+                real_bidx,
+                lambda: self.save_model_in_fp16(ep, real_bidx)
+            )
+
+    def train_epoch(self, ep=0):
         period_loss_list = []
         period_calc_time_list = []
 
-        real_bidx = -1
-        for bidx, batch in enumerate(data_iter):
-            if bidx < self.args.start_batch:
-                continue
-            real_bidx = bidx + 1
+        real_bidx = 0
 
-            stop_calc_timer = self.start_timer()
-            loss_val = self.train_one_batch(ep, real_bidx, batch)
-            period_loss_list.append(loss_val)
-            period_calc_time_list.append(stop_calc_timer())
+        if self.args.pipeline:
+            from deepspeed import PipelineEngine
+            from deepspeed.utils import RepeatingLoader
+            assert isinstance(self.model, PipelineEngine)
+            assert isinstance(self.train_loader, RepeatingLoader)
+            data_iter = iter(self.train_loader)
+            while True:
+                real_bidx += 1
+                if real_bidx <= self.args.start_batch:
+                    continue
+                stop_calc_timer = self.start_timer()
+                self.model.train()
+                loss_val = self.model.train_batch(data_iter).item()
+                period_loss_list.append(loss_val)
+                period_calc_time_list.append(stop_calc_timer())
+        else:
+            data_iter = iter(self.train_loader)
+            for batch in data_iter:
+                real_bidx += 1
+                if real_bidx <= self.args.start_batch:
+                    continue
+                stop_calc_timer = self.start_timer()
+                self.model.train()
+                loss_val = self.train_batch(batch)
+                period_loss_list.append(loss_val)
+                period_calc_time_list.append(stop_calc_timer())
 
-            if real_bidx % self.args.log_period == 0:
-                self.period_log(
+                self._postprocess(
                     ep,
                     real_bidx,
+                    loss_val,
                     period_loss_list,
                     period_calc_time_list
-                )
-
-            if real_bidx % self.args.save_period == 0:
-                self.save_all_state(ep, real_bidx)
-
-            if self.args.local_rank == 0 and real_bidx % self.args.validate_period == 0:
-                self.validate(ep, real_bidx)
-
-            if self.args.local_rank == 0 and real_bidx % self.args.replicate_period == 0:
-                self.escape_from_exception(
-                    ep,
-                    bidx,
-                    lambda: self.save_model_in_fp16(ep, bidx)
                 )
 
         return real_bidx
@@ -306,5 +316,5 @@ class SFTrainer:
         for ep in range(self.args.epochs):
             if ep < self.args.start_epoch:
                 continue
-            final_bidx = self.train_one_epoch(ep)
+            final_bidx = self.train_epoch(ep)
             self.save_all_state(ep, final_bidx)

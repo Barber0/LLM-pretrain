@@ -31,3 +31,4 @@ class TrainArgs:
     torch_ckpt_opt_prefix: str = 'optim'
 
     deepspeed_module_key: str = 'module'
+    pipeline: bool = False

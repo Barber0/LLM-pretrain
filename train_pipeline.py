@@ -5,10 +5,8 @@ import deepspeed
 import numpy as np
 import torch
 from datasets import load_from_disk
-from torch.optim import Optimizer
 from torch.utils.data import DataLoader
 from torch.utils.tensorboard import SummaryWriter
-from transformers import AutoTokenizer
 
 from data_obj import ModelArgs, ProgramArgs, TrainArgs
 from data_obj.train_args import TrainArgs
@@ -48,30 +46,6 @@ def fix_grad(model, logger):
     logger.info('\n'.join(param_grad_info))
 
 
-class SFTrainerForDSDP(SFTrainer):
-    def __init__(self, train_args: TrainArgs, model: ModelType, opt: Optimizer,
-                 train_loader: DataLoader, validate_loader: DataLoader,
-                 logger: Logger, tb_writer: SummaryWriter,
-                 tokenizer: AutoTokenizer):
-        super().__init__(train_args, model, opt, train_loader,
-                         validate_loader, logger, tb_writer)
-        self.tokenizer = tokenizer
-
-    def train_batch(self, batch):
-        x, y = convert_batch_to_ids(
-            self.tokenizer,
-            batch['text'],
-            model_args.max_len,
-            model_args.ext_factor,
-            self.model.device
-        )
-        assert isinstance(self.model, deepspeed.DeepSpeedEngine)
-        loss = self.model.forward(x, y)
-        self.model.backward(loss)
-        self.model.step()
-        return loss.item()
-
-
 def main(
     prog_args: ProgramArgs,
     model_args: ModelArgs,
@@ -85,13 +59,13 @@ def main(
     tkn, VOCAB_SIZE = prepare_tokenizer(prog_args.tokenizer_path)
 
     from models import SFLLM
-    base_model = SFLLM(
+    pipe_model, loss_fn = SFLLM(
         vocab_size=VOCAB_SIZE,
         pad_token_id=tkn.pad_token_id,
         args=model_args,
-    )
+    ).pipeline_and_loss_fn()
 
-    param_num = count_parameters(base_model) * 1e-9
+    param_num = count_parameters(pipe_model) * 1e-9
     logger.info('Model parameters: %f B', param_num)
 
     use_torch_ckpt = SFTrainer.validate_ckpt(
@@ -101,17 +75,20 @@ def main(
     if use_torch_ckpt:
         SFTrainer.load_ckpt(
             train_args,
-            base_model,
+            pipe_model,
             None,
             logger
         )
 
-    train_set = load_from_disk(prog_args.train_path)
+    pipe_model = deepspeed.PipelineModule(
+        layers=pipe_model,
+        num_stages=train_args.world_size,
+        loss_fn=loss_fn,
+    )
 
-    model_engine, opt, train_loader, _ = deepspeed.initialize(
-        model=base_model,
+    model_engine, opt, _ = deepspeed.initialize(
+        model=pipe_model,
         config=prog_args.deepspeed_cfg,
-        training_data=train_set,
     )
 
     use_ds_ckpt = SFTrainer.validate_ckpt(
@@ -130,6 +107,19 @@ def main(
     train_args.batch_size = get_micro_batch_size()
     train_args.grad_accum_period = get_grad_accum_steps()
 
+    train_set = load_from_disk(prog_args.train_path)
+    train_loader = deepspeed.utils.RepeatingLoader(DataLoader(
+        dataset=train_set,
+        batch_size=train_args.batch_size,
+        collate_fn=lambda batch: convert_batch_to_ids(
+            tkn,
+            [line['text'] for line in batch],
+            max_len=model_args.max_len,
+            ext_factor=model_args.ext_factor,
+            device=model_engine.device
+        )
+    ))
+
     validate_set = load_from_disk(prog_args.validate_path).shuffle(
         seed=train_args.start_batch)
     validate_loader = DataLoader(
@@ -140,7 +130,8 @@ def main(
 
     tb_writer = SummaryWriter(log_dir=prog_args.tensorboard_path)
 
-    trainer = SFTrainerForDSDP(
+    assert train_args.pipeline
+    trainer = SFTrainer(
         train_args=train_args,
         model=model_engine,
         opt=opt,
@@ -148,7 +139,6 @@ def main(
         validate_loader=validate_loader,
         logger=logger,
         tb_writer=tb_writer,
-        tokenizer=tkn,
     )
 
     trainer.train()
