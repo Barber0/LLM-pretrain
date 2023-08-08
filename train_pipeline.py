@@ -91,12 +91,12 @@ def main(
         loss_fn=loss_fn,
     )
 
-    model_engine = deepspeed.initialize(
+    model_engine, opt = deepspeed.initialize(
         model=pipe_model,
         config=prog_args.deepspeed_cfg,
         model_parameters=[p for p in pipe_model.parameters()
                           if p.requires_grad],
-    )[0]
+    )[:2]
 
     use_ds_ckpt = SFTrainer.validate_ckpt(
         train_args.deepspeed_ckpt_home,

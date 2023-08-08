@@ -276,9 +276,7 @@ class SFTrainer:
 
         if self.args.pipeline:
             from deepspeed import PipelineEngine
-            from deepspeed.utils import RepeatingLoader
             assert isinstance(self.model, PipelineEngine)
-            assert isinstance(self.train_loader, RepeatingLoader)
             data_iter = iter(self.train_loader)
             while True:
                 real_bidx += 1

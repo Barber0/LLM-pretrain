@@ -19,7 +19,7 @@ class ComplexRoPE(RoPE):
             x_,
             seq_len_dim_idx,
             head_dim_idx
-        )
+        ).to(x_.device)
         return self._complex_to_real(emb_table * x_).type_as(x)
 
     @staticmethod

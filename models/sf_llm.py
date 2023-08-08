@@ -190,9 +190,9 @@ class SFEmbedding(nn.Embedding):
         seq_len = input.size(-1)
         end_idx = start_idx+seq_len
 
-        emb_table_k = self.get_phase_table_fn(end_idx, 0)
+        emb_table_k = self.get_phase_table_fn(end_idx, 0).to(emb_out.device)
         emb_table_q = emb_table_k if start_idx == 0 else self.get_phase_table_fn(
-            seq_len, start_idx)
+            seq_len, start_idx).to(emb_out.device)
 
         mask = None
         if generate:
