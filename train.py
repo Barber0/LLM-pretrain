@@ -57,19 +57,26 @@ class SFTrainerForDSDP(SFTrainer):
                          validate_loader, logger, tb_writer)
         self.tokenizer = tokenizer
 
-    def train_batch(self, bidx, batch):
-        x, y = convert_batch_to_ids(
+    def process_batch(self, batch):
+        return convert_batch_to_ids(
             self.tokenizer,
             batch['text'],
             model_args.max_len,
             model_args.ext_factor,
             self.model.device
         )
+
+    def train_batch(self, bidx, batch):
+        x, y = self.process_batch(batch)
         assert isinstance(self.model, deepspeed.DeepSpeedEngine)
         loss = self.model.forward(x, y)
         self.model.backward(loss)
         self.model.step()
         return loss.item()
+
+    def validate_batch(self, batch):
+        x, y = self.process_batch(batch)
+        return self.model.forward(x, y).item()
 
 
 def main(
@@ -135,7 +142,7 @@ def main(
     validate_loader = DataLoader(
         validate_set,
         batch_size=train_args.batch_size,
-        shuffle=True
+        shuffle=True,
     )
 
     tb_writer = SummaryWriter(log_dir=prog_args.tensorboard_path)

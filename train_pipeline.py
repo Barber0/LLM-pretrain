@@ -46,6 +46,11 @@ def fix_grad(model, logger):
     logger.info('\n'.join(param_grad_info))
 
 
+class SFTrainerForPipeline(SFTrainer):
+    def validate_batch(self, batch):
+        return self.model.forward(*batch).item()
+
+
 def main(
     prog_args: ProgramArgs,
     model_args: ModelArgs,
@@ -107,31 +112,29 @@ def main(
     train_args.batch_size = get_micro_batch_size()
     train_args.grad_accum_period = get_grad_accum_steps()
 
-    train_set = load_from_disk(prog_args.train_path)
-    train_loader = deepspeed.utils.RepeatingLoader(DataLoader(
-        dataset=train_set,
-        batch_size=train_args.batch_size,
-        collate_fn=lambda batch: convert_batch_to_ids(
-            tkn,
-            [line['text'] for line in batch],
-            max_len=model_args.max_len,
-            ext_factor=model_args.ext_factor,
-            device=model_engine.device
-        )
-    ))
-
-    validate_set = load_from_disk(prog_args.validate_path).shuffle(
-        seed=train_args.start_batch)
-    validate_loader = DataLoader(
-        validate_set,
-        batch_size=train_args.batch_size,
-        shuffle=True
+    def collate_fn(batch): return convert_batch_to_ids(
+        tkn,
+        [line['text'] for line in batch],
+        max_len=model_args.max_len,
+        ext_factor=model_args.ext_factor,
+        device=model_engine.device
     )
+
+    def build_data_loader(dataset): return DataLoader(
+        dataset=dataset,
+        batch_size=train_args.batch_size,
+        collate_fn=collate_fn
+    )
+
+    train_loader = build_data_loader(load_from_disk(prog_args.train_path))
+    validate_loader = build_data_loader(
+        load_from_disk(prog_args.validate_path).shuffle(
+            seed=train_args.start_batch))
 
     tb_writer = SummaryWriter(log_dir=prog_args.tensorboard_path)
 
     assert train_args.pipeline
-    trainer = SFTrainer(
+    trainer = SFTrainerForPipeline(
         train_args=train_args,
         model=model_engine,
         opt=opt,

@@ -21,7 +21,6 @@ except ImportError:
     class PipeEnginePlaceholder:
         pass
 
-DSModuleType = Union[DSEnginePlaceholder, PipeEnginePlaceholder]
 ModelType = Union[DSEnginePlaceholder, PipeEnginePlaceholder, Module]
 
 
@@ -58,7 +57,7 @@ class SFTrainer:
         opt: Optimizer,
         logger: Logger
     ):
-        if isinstance(model, DSModuleType):
+        if isinstance(model, DSEnginePlaceholder) or isinstance(model, PipeEnginePlaceholder):
             if not SFTrainer.validate_ckpt(args.deepspeed_ckpt_home, args.deepspeed_ckpt_tag):
                 logger.warning('Checkpoint home not found: %s/%s',
                                args.deepspeed_ckpt_home,
@@ -102,7 +101,7 @@ class SFTrainer:
                     else:
                         logger.warn('Optimizer not found: %s', model_path)
 
-    def get_next_validate_batch(self):
+    def _get_next_validate_batch(self):
         if self._validate_iter is None:
             self._validate_iter = iter(self.validate_loader)
 
@@ -115,7 +114,7 @@ class SFTrainer:
         return batch
 
     @staticmethod
-    def start_timer():
+    def _start_timer():
         stime = time()
 
         def _stop_timer():
@@ -123,7 +122,7 @@ class SFTrainer:
         return _stop_timer
 
     @staticmethod
-    def list_mean(
+    def _list_mean(
         data_list: List,
         need_clear: bool = True
     ):
@@ -132,7 +131,7 @@ class SFTrainer:
             data_list.clear()
         return mean_val
 
-    def escape_from_exception(self, ep, bidx, callback):
+    def _escape_from_exception(self, ep, bidx, callback):
         try:
             callback()
         except Exception as ex:
@@ -141,39 +140,39 @@ class SFTrainer:
     def train_batch(self, bidx, batch):
         raise Exception("Not implemented")
 
-    def validate(self, ep, bidx):
-        stop_validate_timer = self.start_timer()
+    def validate_batch(self, batch):
+        raise Exception("Not implemented")
+
+    def _validate(self, ep, bidx):
+        stop_validate_timer = self._start_timer()
         self.model.eval()
         validate_loss_list = []
         with torch.no_grad():
             for _ in range(self.args.validate_batch_num):
-                batch = self.get_next_validate_batch()
-                x, y = self.batch_collate_fn(batch)
-                loss = self.compute_loss_fn(
-                    self.model,
-                    x,
-                    y,
-                    self.args.grad_accum_period
-                )
-                validate_loss_list.append(loss.item())
-        avg_validate_loss = self.list_mean(validate_loss_list, False)
+                loss_val = self.validate_batch(self._get_next_validate_batch())
+                validate_loss_list.append(loss_val)
         validate_time = stop_validate_timer()
+        self._postprocess_for_validate(
+            ep, bidx, validate_time, validate_loss_list)
+
+    def _postprocess_for_validate(self, ep, bidx, validate_time, validate_loss_list):
+        avg_validate_loss = self._list_mean(validate_loss_list, False)
         self.logger.info(
             '[V] ep: %d, batch: %d, calc_time: %.2f, loss: %f',
             ep, bidx, validate_time, avg_validate_loss
         )
-        self.escape_from_exception(ep, bidx, lambda: self.tb_writer.add_scalar(
+        self._escape_from_exception(ep, bidx, lambda: self.tb_writer.add_scalar(
             'Validation Loss', avg_validate_loss, bidx))
 
-    def period_log(
+    def _period_log(
         self,
         ep,
         bidx,
         period_loss_list,
         period_calc_time_list,
     ):
-        avg_loss = self.list_mean(period_loss_list)
-        avg_calc_time = self.list_mean(period_calc_time_list)
+        avg_loss = self._list_mean(period_loss_list)
+        avg_calc_time = self._list_mean(period_calc_time_list)
 
         cur_lr = self.opt.param_groups[0]['lr']
         self.logger.info(
@@ -184,7 +183,7 @@ class SFTrainer:
         )
 
         if self.args.local_rank == 0:
-            self.escape_from_exception(
+            self._escape_from_exception(
                 ep,
                 bidx,
                 lambda: self.tb_writer.add_scalar(
@@ -192,8 +191,8 @@ class SFTrainer:
             )
             self.tb_writer.flush()
 
-    def save_model_in_fp16(self, ep, bidx):
-        if isinstance(self.model, DSModuleType):
+    def _save_model_in_fp16(self, ep, bidx):
+        if isinstance(self.model, DSEnginePlaceholder) or isinstance(self.model, PipeEnginePlaceholder):
             state_dict = self.model.module.state_dict()
             ckpt_home = self.args.deepspeed_ckpt_home
         elif isinstance(self.model, Module):
@@ -207,15 +206,15 @@ class SFTrainer:
         save_path = f'{ckpt_home}/{self.args.deepspeed_ckpt_tag}-{ep}_{bidx}.pt'
         torch.save(state_dict_fp16, save_path)
 
-    def save_optimizer(self, ep, bidx):
+    def _save_optimizer(self, ep, bidx):
         state_dict = self.opt.state_dict()
         os.makedirs(self.args.torch_ckpt_home, exist_ok=True)
         save_path = f'{self.args.torch_ckpt_home}/opt-{self.args.torch_ckpt_tag}-{ep}_{bidx}.pt'
         torch.save(state_dict, save_path)
 
-    def save_all_state(self, ep, bidx):
-        if isinstance(self.model, DSModuleType):
-            self.escape_from_exception(
+    def _save_all_state(self, ep, bidx):
+        if isinstance(self.model, DSEnginePlaceholder) or isinstance(self.model, PipeEnginePlaceholder):
+            self._escape_from_exception(
                 ep,
                 bidx,
                 lambda: self.model.save_checkpoint(
@@ -227,12 +226,12 @@ class SFTrainer:
                 f.write(f'{ep}-{bidx}')
 
         elif isinstance(self.model, Module):
-            self.escape_from_exception(ep, bidx,
-                                       lambda: self.save_model_in_fp16(ep, bidx))
-            self.escape_from_exception(ep, bidx,
-                                       lambda: self.save_optimizer(ep, bidx))
+            self._escape_from_exception(ep, bidx,
+                                        lambda: self._save_model_in_fp16(ep, bidx))
+            self._escape_from_exception(ep, bidx,
+                                        lambda: self._save_optimizer(ep, bidx))
 
-    def _postprocess(
+    def _postprocess_for_train(
         self,
         ep,
         real_bidx,
@@ -241,7 +240,7 @@ class SFTrainer:
         period_calc_time_list,
     ):
         if self.args.local_rank == 0:
-            self.escape_from_exception(
+            self._escape_from_exception(
                 ep,
                 real_bidx,
                 lambda: self.tb_writer.add_scalar(
@@ -249,7 +248,7 @@ class SFTrainer:
             )
 
         if real_bidx % self.args.log_period == 0:
-            self.period_log(
+            self._period_log(
                 ep,
                 real_bidx,
                 period_loss_list,
@@ -257,19 +256,19 @@ class SFTrainer:
             )
 
         if real_bidx % self.args.save_period == 0:
-            self.save_all_state(ep, real_bidx)
+            self._save_all_state(ep, real_bidx)
 
         if self.args.local_rank == 0 and real_bidx % self.args.validate_period == 0:
-            self.validate(ep, real_bidx)
+            self._validate(ep, real_bidx)
 
         if self.args.local_rank == 0 and real_bidx % self.args.replicate_period == 0:
-            self.escape_from_exception(
+            self._escape_from_exception(
                 ep,
                 real_bidx,
-                lambda: self.save_model_in_fp16(ep, real_bidx)
+                lambda: self._save_model_in_fp16(ep, real_bidx)
             )
 
-    def train_epoch(self, ep=0):
+    def _train_epoch(self, ep=0):
         period_loss_list = []
         period_calc_time_list = []
 
@@ -285,24 +284,32 @@ class SFTrainer:
                 real_bidx += 1
                 if real_bidx <= self.args.start_batch:
                     continue
-                stop_calc_timer = self.start_timer()
+                stop_calc_timer = self._start_timer()
                 self.model.train()
-                loss_val = self.model.train_batch(data_iter).item()
+                loss_val = self.model.train_batch(data_iter)
                 period_loss_list.append(loss_val)
                 period_calc_time_list.append(stop_calc_timer())
+
+                self._postprocess_for_train(
+                    ep,
+                    real_bidx,
+                    loss_val,
+                    period_loss_list,
+                    period_calc_time_list
+                )
         else:
             data_iter = iter(self.train_loader)
             for batch in data_iter:
                 real_bidx += 1
                 if real_bidx <= self.args.start_batch:
                     continue
-                stop_calc_timer = self.start_timer()
+                stop_calc_timer = self._start_timer()
                 self.model.train()
                 loss_val = self.train_batch(real_bidx, batch)
                 period_loss_list.append(loss_val)
                 period_calc_time_list.append(stop_calc_timer())
 
-                self._postprocess(
+                self._postprocess_for_train(
                     ep,
                     real_bidx,
                     loss_val,
@@ -316,5 +323,5 @@ class SFTrainer:
         for ep in range(self.args.epochs):
             if ep < self.args.start_epoch:
                 continue
-            final_bidx = self.train_epoch(ep)
-            self.save_all_state(ep, final_bidx)
+            final_bidx = self._train_epoch(ep)
+            self._save_all_state(ep, final_bidx)
