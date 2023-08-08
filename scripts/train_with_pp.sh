@@ -42,7 +42,8 @@ TRAIN_ARGS="
     --replicate_period 5000 \
     --deepspeed_ckpt_tag main \
     --deepspeed_ckpt_home /root/autodl-tmp/sfllm-magic32 \
-    --torch_ckpt_tag sfllm
+    --torch_ckpt_tag sfllm \
+    --pipeline
 "
 
 deepspeed \

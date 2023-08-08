@@ -91,11 +91,12 @@ def main(
         loss_fn=loss_fn,
     )
 
-    model_engine, opt, _ = deepspeed.initialize(
+    model_engine = deepspeed.initialize(
         model=pipe_model,
         config=prog_args.deepspeed_cfg,
-        model_parameters=[p for p in pipe_model.parameters() if p.requires_grad],
-    )
+        model_parameters=[p for p in pipe_model.parameters()
+                          if p.requires_grad],
+    )[0]
 
     use_ds_ckpt = SFTrainer.validate_ckpt(
         train_args.deepspeed_ckpt_home,
@@ -150,6 +151,7 @@ def main(
 
 if __name__ == '__main__':
     prog_args, model_args, train_args = get_args()
+    deepspeed.init_distributed(dist_backend='nccl')
     main(
         prog_args=prog_args,
         model_args=model_args,

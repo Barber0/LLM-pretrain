@@ -28,10 +28,6 @@
     "fp16": {
         "enabled": true
     },
-    "zero_optimization": {
-        "stage": 1,
-        "contiguous_gradients": true
-    },
     "pipeline": {
         "type": "interleaved"
     }
