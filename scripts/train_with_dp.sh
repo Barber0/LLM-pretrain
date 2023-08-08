@@ -36,7 +36,7 @@ PROG_ARGS="
 "
 
 TRAIN_ARGS="
-    --start_batch 88900 \
+    --start_batch 97000 \
     --save_period 500 \
     --validate_period 500 \
     --replicate_period 5000 \
