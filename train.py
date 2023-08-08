@@ -4,7 +4,7 @@ from logging import Logger
 import deepspeed
 import numpy as np
 import torch
-from datasets import load_from_disk
+from datasets import load_dataset
 from torch.optim import Optimizer
 from torch.utils.data import DataLoader
 from torch.utils.tensorboard import SummaryWriter
@@ -113,7 +113,9 @@ def main(
             logger
         )
 
-    train_set = load_from_disk(prog_args.train_path)
+    data_set = load_dataset(prog_args.train_path, streaming=True)
+    train_set = data_set['train']
+    validate_set = data_set['validation'].shuffle(seed=train_args.start_batch)
 
     model_engine, opt, train_loader, _ = deepspeed.initialize(
         model=base_model,
@@ -137,8 +139,6 @@ def main(
     train_args.batch_size = get_micro_batch_size()
     train_args.grad_accum_period = get_grad_accum_steps()
 
-    validate_set = load_from_disk(prog_args.validate_path).shuffle(
-        seed=train_args.start_batch)
     validate_loader = DataLoader(
         validate_set,
         batch_size=train_args.batch_size,
