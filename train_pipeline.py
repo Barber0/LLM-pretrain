@@ -1,5 +1,4 @@
 import random
-from logging import Logger
 
 import deepspeed
 import numpy as np
@@ -10,7 +9,7 @@ from torch.utils.tensorboard import SummaryWriter
 
 from data_obj import ModelArgs, ProgramArgs, TrainArgs
 from data_obj.train_args import TrainArgs
-from sf_trainer import ModelType, SFTrainer
+from sf_trainer import SFTrainer
 from utils import (build_logger, convert_batch_to_ids, count_parameters,
                    get_args, prepare_tokenizer)
 
@@ -64,15 +63,12 @@ def main(
     tkn, VOCAB_SIZE = prepare_tokenizer(prog_args.tokenizer_path)
 
     from models import SFLLM
-    pipe_model, loss_fn = SFLLM(
+    base_model = SFLLM(
         vocab_size=VOCAB_SIZE,
         pad_token_id=tkn.pad_token_id,
         args=model_args,
-    ).pipeline_and_loss_fn()
-
-    param_num = count_parameters(pipe_model) * 1e-9
-    logger.info('Model parameters: %f B', param_num)
-
+    )
+    
     use_torch_ckpt = SFTrainer.validate_ckpt(
         train_args.torch_ckpt_home,
         train_args.torch_ckpt_tag
@@ -80,10 +76,15 @@ def main(
     if use_torch_ckpt:
         SFTrainer.load_ckpt(
             train_args,
-            pipe_model,
+            base_model,
             None,
             logger
         )
+    
+    pipe_model, loss_fn = base_model.pipeline_and_loss_fn()
+
+    param_num = count_parameters(pipe_model) * 1e-9
+    logger.info('Model parameters: %f B', param_num)
 
     pipe_model = deepspeed.PipelineModule(
         layers=pipe_model,
@@ -91,10 +92,12 @@ def main(
         loss_fn=loss_fn,
     )
 
-    model_engine, opt, _ = deepspeed.initialize(
+    model_engine, opt = deepspeed.initialize(
         model=pipe_model,
         config=prog_args.deepspeed_cfg,
-    )
+        model_parameters=[p for p in pipe_model.parameters()
+                          if p.requires_grad],
+    )[:2]
 
     use_ds_ckpt = SFTrainer.validate_ckpt(
         train_args.deepspeed_ckpt_home,
@@ -149,6 +152,7 @@ def main(
 
 if __name__ == '__main__':
     prog_args, model_args, train_args = get_args()
+    deepspeed.init_distributed(dist_backend='nccl')
     main(
         prog_args=prog_args,
         model_args=model_args,

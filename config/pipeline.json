@@ -1,0 +1,28 @@
+{
+    "gradient_accumulation_steps": 32,
+    "train_micro_batch_size_per_gpu": 2,
+    "gradient_clipping": 1.0,
+    "optimizer": {
+        "type": "ZeroOneAdam",
+        "params": {
+            "lr": 9.7e-6,
+            "weight_decay": 0.01,
+            "bias_correction": false,
+            "var_freeze_step": 1000,
+            "var_update_scaler": 16,
+            "local_step_scaler": 1000,
+            "local_step_clipper": 16,
+            "cuda_aware": false,
+            "comm_backend_name": "nccl"
+        }
+    },
+    "fp16": {
+        "enabled": true
+    },
+    "pipeline": {
+        "type": "interleaved",
+	"partition": {
+	    "type": "parameters"
+	}
+    }
+}

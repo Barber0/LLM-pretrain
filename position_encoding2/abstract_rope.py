@@ -1,5 +1,4 @@
 import math
-from typing import Callable
 
 import torch
 import torch.nn as nn
@@ -7,9 +6,6 @@ from torch import Tensor
 
 
 class RoPE(nn.Module):
-    PhaseTableGetterType = Callable[[int, int], Tensor]
-    RoPEFunctionType = Callable[[Tensor, Tensor, int, int], Tensor],
-
     def __init__(
         self,
         hidden_states: int,
@@ -46,6 +42,12 @@ class RoPE(nn.Module):
     def get_phase_table(self, seq_len: int, start_idx: int):
         return self.phase[start_idx:start_idx+seq_len]
 
+    def get_phase_table_for_qk(self, seq_len: int, start_idx: int):
+        emb_table_k = self.get_phase_table(start_idx+seq_len, 0)
+        emb_table_q = emb_table_k if start_idx == 0 else self.get_phase_table(
+            seq_len, start_idx)
+        return emb_table_q, emb_table_k
+
     def apply_rotary(
         self,
         x: torch.Tensor,
@@ -54,3 +56,21 @@ class RoPE(nn.Module):
         head_dim_idx: int = 3
     ):
         raise Exception('Not implemented')
+
+    def apply_rotary_for_qk(
+        self,
+        q: torch.Tensor,
+        k: torch.Tensor,
+        seq_len_dim_idx: int,
+        head_dim_idx: int
+    ):
+        q_len = q.size(seq_len_dim_idx)
+        k_len = k.size(seq_len_dim_idx)
+        start_idx = k_len - q_len
+        emb_table_q, emb_table_k = self.get_phase_table_for_qk(
+            q_len, start_idx)
+        q = self.apply_rotary(
+            q, emb_table_q, seq_len_dim_idx, head_dim_idx)
+        k = self.apply_rotary(
+            k, emb_table_k, seq_len_dim_idx, head_dim_idx)
+        return q, k

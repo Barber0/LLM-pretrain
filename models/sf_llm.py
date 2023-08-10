@@ -47,7 +47,7 @@ class Attention(nn.Module):
         self,
         hidden_states: int,
         n_heads: int,
-        rope_fn: RoPE.RoPEFunctionType,
+        rope_fn,
         dropout_prob: float = 0.1
     ):
         super(Attention, self).__init__()
@@ -66,10 +66,8 @@ class Attention(nn.Module):
     def forward(
         self,
         x: Tensor,
-        emb_table_q: Tensor,
-        emb_table_k: Tensor,
-        mask: Tensor,
-        prefix_kv=None
+        mask: Tensor = None,
+        prefix_kv: Tensor = None
     ):
         head_dim_idx = 3
         qkv = self.proj(x)
@@ -78,8 +76,10 @@ class Attention(nn.Module):
             seq_len_dim_idx = 1
             q, k, v = rearrange(
                 qkv, 'b n (c h d) -> c b n h d', c=3, h=self.n_heads)
-            q = self.rope_fn(q, emb_table_q, seq_len_dim_idx, head_dim_idx)
-            k = self.rope_fn(k, emb_table_k, seq_len_dim_idx, head_dim_idx)
+
+            q, k = self.rope_fn(
+                q, k, seq_len_dim_idx, head_dim_idx)
+
             attn_o = flash_attn_func(
                 q,
                 k,
@@ -98,8 +98,9 @@ class Attention(nn.Module):
                 v = torch.cat((pv, v), dim=seq_len_dim_idx)
             next_prefix_kv = torch.stack((k, v))
 
-            q = self.rope_fn(q, emb_table_q, seq_len_dim_idx, head_dim_idx)
-            k = self.rope_fn(k, emb_table_k, seq_len_dim_idx, head_dim_idx)
+            q, k = self.rope_fn(
+                q, k, seq_len_dim_idx, head_dim_idx)
+
             attn_o = self.attn(q, k, v, mask)
             attn_o = rearrange(attn_o, 'b h n d -> b n (h d)')
 
@@ -114,28 +115,20 @@ class Attention(nn.Module):
         return torch.matmul(scores, v)
 
 
-@dataclass
-class BlockData:
-    x: Tensor
-    emb_table_q: Tensor
-    emb_table_k: Tensor
-    mask: Tensor
-
-
 class Block(nn.Module):
-    def __init__(self, hidden_states: int, n_heads: int, rope_fn: RoPE.RoPEFunctionType, dropout_prob: float = 0.1):
+    def __init__(self, hidden_states: int, n_heads: int, rope_fn, dropout_prob: float = 0.1):
         super(Block, self).__init__()
         self.hidden_states = hidden_states
         self.n_heads = n_heads
-        self.rope_fn = rope_fn
         self.dropout_prob = dropout_prob
-        self.ensure_ready()
+        
+        if self.dropout_prob > 0:
+            print(f'Block dropout: {dropout_prob}')
 
-    def ensure_ready(self):
         self.attn = Attention(
             self.hidden_states,
             self.n_heads,
-            self.rope_fn,
+            rope_fn,
             self.dropout_prob,
         )
         self.ln1 = LayerNorm(self.hidden_states)
@@ -144,22 +137,21 @@ class Block(nn.Module):
 
     def forward_with_prefix(
         self,
-        data: BlockData,
-        prefix_kv=None
+        x: Tensor,
+        mask: Tensor = None,
+        prefix_kv: Tensor = None
     ):
         attn_o, prefix_kv = self.attn.forward(
-            self.ln1(data.x),
-            data.emb_table_q,
-            data.emb_table_k,
-            data.mask,
+            self.ln1(x),
+            mask,
             prefix_kv
         )
-        data.x = data.x + attn_o
-        data.x = data.x + self.mlp(self.ln2(data.x))
-        return data, prefix_kv
+        x = x + attn_o
+        x = x + self.mlp(self.ln2(x))
+        return x, prefix_kv
 
-    def forward(self, data: BlockData):
-        return self.forward_with_prefix(data=data)[0]
+    def forward(self, x: Tensor):
+        return self.forward_with_prefix(x, None, None)[0]
 
 
 class SFEmbedding(nn.Embedding):
@@ -170,13 +162,11 @@ class SFEmbedding(nn.Embedding):
         pad_token_id: int,
         n_layers: int,
         base_mask: torch.Tensor,
-        get_phase_table_fn: RoPE.PhaseTableGetterType
     ):
         super().__init__(num_embeddings, embedding_dim)
         self.pad_token_id = pad_token_id
         self.n_layers = n_layers
         self.base_mask = base_mask
-        self.get_phase_table_fn = get_phase_table_fn
 
     def forward_with_prefix(
         self,
@@ -189,10 +179,6 @@ class SFEmbedding(nn.Embedding):
             prefix_kv_list)
         seq_len = input.size(-1)
         end_idx = start_idx+seq_len
-
-        emb_table_k = self.get_phase_table_fn(end_idx, 0)
-        emb_table_q = emb_table_k if start_idx == 0 else self.get_phase_table_fn(
-            seq_len, start_idx)
 
         mask = None
         if generate:
@@ -208,17 +194,9 @@ class SFEmbedding(nn.Embedding):
             mask = mask & self.base_mask[..., start_idx:end_idx, :end_idx].to(
                 input.device)
 
-        return BlockData(
-            x=emb_out,
-            emb_table_q=emb_table_q,
-            emb_table_k=emb_table_k,
-            mask=mask
-        ), prefix_kv_list
+        return emb_out, mask, prefix_kv_list
 
-    def forward(
-        self,
-        input: Tensor
-    ):
+    def forward(self, input: Tensor):
         return self.forward_with_prefix(input, None, False)[0]
 
     def _process_prefix_kv_list(self, prefix_kv_list: List[Tensor] = None):
@@ -239,8 +217,6 @@ class CELoss(nn.CrossEntropyLoss):
 
 
 class SFLLM(nn.Module):
-    rope_emb: RoPE
-
     def __init__(
         self,
         vocab_size: int,
@@ -278,21 +254,20 @@ class SFLLM(nn.Module):
         )
 
     def _build_model(self):
-        assert self.rope_emb is not None
         self.emb = SFEmbedding(
             self.vocab_size,
             self.args.hidden_states,
             self.pad_token_id,
             self.args.n_layers,
             self.create_mask(self.args.max_len * self.args.ext_factor),
-            self.rope_emb.get_phase_table
         )
 
         self.blocks = nn.ModuleList([
             Block(
                 self.args.hidden_states,
                 self.args.n_heads,
-                self.rope_emb.apply_rotary,
+                self.rope_emb.apply_rotary_for_qk,
+                self.args.dropout,
             ) for _ in range(self.args.n_layers)
         ])
 
@@ -316,7 +291,7 @@ class SFLLM(nn.Module):
         prefix_kv_list: List[Tensor] = None,
         generate: bool = False
     ):
-        data_block, prefix_kv_list = self.emb.forward_with_prefix(
+        x, mask, prefix_kv_list = self.emb.forward_with_prefix(
             input=input_ids,
             prefix_kv_list=prefix_kv_list,
             generate=generate,
@@ -324,11 +299,11 @@ class SFLLM(nn.Module):
 
         next_prefix_kv_list = []
         for block, prefix_kv in zip(self.blocks, prefix_kv_list):
-            data_block, next_prefix_kv = block.forward_with_prefix(
-                data_block, prefix_kv)
+            x, next_prefix_kv = block.forward_with_prefix(
+                x, mask, prefix_kv)
             next_prefix_kv_list.append(next_prefix_kv)
 
-        ln_out = self.ln(data_block.x)
+        ln_out = self.ln(x)
 
         if self.decoder is None:
             y_pred = torch.matmul(ln_out, self.emb.weight.transpose(0, 1))
@@ -347,7 +322,8 @@ class SFLLM(nn.Module):
         if self.decoder is None:
             raise Exception("Decoder(Linear) not found.")
 
-        return nn.Sequential(nn.ModuleList([self.vocab_emb] + [block for block in self.blocks] + [
-            self.layerNorm,
+        module_list = [self.emb] + [block for block in self.blocks] + [
+            self.ln,
             self.decoder
-        ])), self.loss_fn
+        ]
+        return nn.Sequential(*module_list), self.loss_fn

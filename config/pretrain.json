@@ -17,10 +17,10 @@
     "scheduler": {
         "type": "WarmupDecayLR",
         "params": {
-            "total_num_steps": 13500,
-            "warmup_min_lr": 9.7e-6,
-            "warmup_max_lr": 8.89e-5,
-            "warmup_num_steps": 1240
+            "total_num_steps": 10000,
+            "warmup_min_lr": 9.7e-7,
+            "warmup_max_lr": 9.7e-6,
+            "warmup_num_steps": 5395
         }
     },
     "fp16": {

@@ -17,43 +17,39 @@ cd $proj_home_dir
 # export NCCL_VERSION=2.14.3-1
 
 GPUS=2
-TB_PATH=/root/tf-logs
-LOG_HOME=./tmp
-
-mkdir -p $TB_PATH
-mkdir -p $LOG_HOME
 
 MODEL_ARGS="
     --hidden_states 3200 \
     --n_heads 32 \
     --n_layers 32 \
     --max_len 1024 \
-    --ext_factor 1 \
-    --dropout 0
+    --ext_factor 1
 "
 
 PROG_ARGS="
-    --deepspeed_cfg ./config/pretrain.json \
+    --deepspeed_cfg ./config/pipeline.json \
     --train_path /root/autodl-tmp/pile03-parsed \
     --validate_path /root/autodl-tmp/pile04-parsed \
     --tokenizer_path ./tokenizer \
-    --tensorboard_path $TB_PATH \
-    --log_path $LOG_HOME/train.log 
+    --tensorboard_path /root/tf-logs \
+    --log_path ./tmp/train.log 
 "
 
 TRAIN_ARGS="
-    --start_batch 208500 \
+    --start_batch 160000 \
     --save_period 500 \
     --validate_period 500 \
     --replicate_period 5000 \
-    --deepspeed_ckpt_tag main \
-    --deepspeed_ckpt_home /root/autodl-tmp/sfllm-magic32 \
-    --torch_ckpt_tag sfllm
+    --deepspeed_ckpt_tag pipe \
+    --deepspeed_ckpt_home /root/autodl-tmp/sfllm-pipe \
+    --torch_ckpt_home /root/autodl-tmp/sfllm-magic32 \
+    --torch_ckpt_tag main-0_160000 \
+    --pipeline
 "
 
 deepspeed \
     --num_gpus=$GPUS \
-    train.py \
+    train_pipeline.py \
     $PROG_ARGS \
     $MODEL_ARGS \
     $TRAIN_ARGS
