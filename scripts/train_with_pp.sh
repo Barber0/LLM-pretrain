@@ -19,10 +19,10 @@ cd $proj_home_dir
 GPUS=2
 
 MODEL_ARGS="
-    --hidden_states 2048 \
+    --hidden_states 3200 \
     --n_heads 32 \
-    --n_layers 24 \
-    --max_len 512 \
+    --n_layers 32 \
+    --max_len 1024 \
     --ext_factor 1
 "
 
@@ -36,13 +36,14 @@ PROG_ARGS="
 "
 
 TRAIN_ARGS="
-    --start_batch 0 \
+    --start_batch 160000 \
     --save_period 500 \
     --validate_period 500 \
     --replicate_period 5000 \
-    --deepspeed_ckpt_tag main \
-    --deepspeed_ckpt_home /root/autodl-tmp/sfllm-magic32 \
-    --torch_ckpt_tag sfllm \
+    --deepspeed_ckpt_tag pipe \
+    --deepspeed_ckpt_home /root/autodl-tmp/sfllm-pipe \
+    --torch_ckpt_home /root/autodl-tmp/sfllm-magic32 \
+    --torch_ckpt_tag main-0_160000 \
     --pipeline
 "
 

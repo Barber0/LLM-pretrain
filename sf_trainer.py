@@ -153,9 +153,8 @@ class SFTrainer:
                 validate_loss_list.append(loss_val)
         validate_time = stop_validate_timer()
         
-        if self.args.local_rank == 0:
-            self._postprocess_for_validate(
-                ep, bidx, validate_time, validate_loss_list)
+        self._postprocess_for_validate(
+            ep, bidx, validate_time, validate_loss_list)
 
     def _postprocess_for_validate(self, ep, bidx, validate_time, validate_loss_list):
         avg_validate_loss = self._list_mean(validate_loss_list, False)
@@ -163,8 +162,9 @@ class SFTrainer:
             '[V] ep: %d, batch: %d, calc_time: %.2f, loss: %f',
             ep, bidx, validate_time, avg_validate_loss
         )
-        self._escape_from_exception(ep, bidx, lambda: self.tb_writer.add_scalar(
-            'Validation Loss', avg_validate_loss, bidx))
+        if self.args.local_rank == 0:
+            self._escape_from_exception(ep, bidx, lambda: self.tb_writer.add_scalar(
+                'Validation Loss', avg_validate_loss, bidx))
 
     def _period_log(
         self,

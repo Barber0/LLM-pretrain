@@ -32,7 +32,7 @@ MODEL_ARGS="
 "
 
 PROG_ARGS="
-    --deepspeed_cfg ./config/ds_cfg_pretrain2.json \
+    --deepspeed_cfg ./config/pretrain.json \
     --train_path /root/autodl-tmp/pile03-parsed \
     --validate_path /root/autodl-tmp/pile04-parsed \
     --tokenizer_path ./tokenizer \
@@ -41,7 +41,7 @@ PROG_ARGS="
 "
 
 TRAIN_ARGS="
-    --start_batch 129500 \
+    --start_batch 183500 \
     --save_period 500 \
     --validate_period 500 \
     --replicate_period 5000 \

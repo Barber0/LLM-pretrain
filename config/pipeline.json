@@ -1,11 +1,11 @@
 {
     "gradient_accumulation_steps": 32,
-    "train_micro_batch_size_per_gpu": 6,
+    "train_micro_batch_size_per_gpu": 2,
     "gradient_clipping": 1.0,
     "optimizer": {
         "type": "ZeroOneAdam",
         "params": {
-            "lr": 1e-3,
+            "lr": 9.7e-6,
             "weight_decay": 0.01,
             "bias_correction": false,
             "var_freeze_step": 1000,
@@ -16,19 +16,13 @@
             "comm_backend_name": "nccl"
         }
     },
-    "scheduler": {
-        "type": "WarmupDecayLR",
-        "params": {
-            "total_num_steps": 4000,
-            "warmup_min_lr": 9.7e-6,
-            "warmup_max_lr": 6.5e-5,
-            "warmup_num_steps": 1240
-        }
-    },
     "fp16": {
         "enabled": true
     },
     "pipeline": {
-        "type": "interleaved"
+        "type": "interleaved",
+	"partition": {
+	    "type": "parameters"
+	}
     }
 }
