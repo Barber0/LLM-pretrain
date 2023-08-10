@@ -28,7 +28,8 @@ MODEL_ARGS="
     --n_heads 32 \
     --n_layers 32 \
     --max_len 1024 \
-    --ext_factor 1
+    --ext_factor 1 \
+    --dropout 0
 "
 
 PROG_ARGS="
@@ -41,7 +42,7 @@ PROG_ARGS="
 "
 
 TRAIN_ARGS="
-    --start_batch 183500 \
+    --start_batch 208500 \
     --save_period 500 \
     --validate_period 500 \
     --replicate_period 5000 \

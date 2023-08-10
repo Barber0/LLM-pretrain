@@ -121,6 +121,9 @@ class Block(nn.Module):
         self.hidden_states = hidden_states
         self.n_heads = n_heads
         self.dropout_prob = dropout_prob
+        
+        if self.dropout_prob > 0:
+            print(f'Block dropout: {dropout_prob}')
 
         self.attn = Attention(
             self.hidden_states,
@@ -264,6 +267,7 @@ class SFLLM(nn.Module):
                 self.args.hidden_states,
                 self.args.n_heads,
                 self.rope_emb.apply_rotary_for_qk,
+                self.args.dropout,
             ) for _ in range(self.args.n_layers)
         ])
 

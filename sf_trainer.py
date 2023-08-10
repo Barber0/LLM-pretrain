@@ -10,6 +10,7 @@ from torch.utils.data import DataLoader
 from torch.utils.tensorboard import SummaryWriter
 
 from data_obj.train_args import TrainArgs
+import statistics as stat
 
 try:
     from deepspeed import DeepSpeedEngine as DSEnginePlaceholder
@@ -126,10 +127,11 @@ class SFTrainer:
         data_list: List,
         need_clear: bool = True
     ):
-        mean_val = sum(data_list) / len(data_list)
+        mean_val = stat.mean(data_list)
+        stdev_val = stat.stdev(data_list)
         if need_clear:
             data_list.clear()
-        return mean_val
+        return mean_val, stdev_val
 
     def _escape_from_exception(self, ep, bidx, callback):
         try:
@@ -157,7 +159,7 @@ class SFTrainer:
             ep, bidx, validate_time, validate_loss_list)
 
     def _postprocess_for_validate(self, ep, bidx, validate_time, validate_loss_list):
-        avg_validate_loss = self._list_mean(validate_loss_list, False)
+        avg_validate_loss, std_validate_loss = self._list_mean(validate_loss_list, False)
         self.logger.info(
             '[V] ep: %d, batch: %d, calc_time: %.2f, loss: %f',
             ep, bidx, validate_time, avg_validate_loss
@@ -173,15 +175,15 @@ class SFTrainer:
         period_loss_list,
         period_calc_time_list,
     ):
-        avg_loss = self._list_mean(period_loss_list)
-        avg_calc_time = self._list_mean(period_calc_time_list)
+        avg_loss, std_loss = self._list_mean(period_loss_list)
+        avg_calc_time, _ = self._list_mean(period_calc_time_list)
 
         cur_lr = self.opt.param_groups[0]['lr']
         self.logger.info(
             '[T] ep: %d, batch: %d, calc_time: %.2f, '
-            'loss: %f, lr: %f',
+            'loss: %f, loss_std: %f',
             ep, bidx, avg_calc_time,
-            avg_loss, cur_lr
+            avg_loss, std_loss
         )
 
         if self.args.local_rank == 0:
