@@ -42,3 +42,5 @@ This project is licensed under the [MIT License](LICENSE). See the license file 
 We hope that this project helps you achieve better results in language model pretraining and fine-tuning! If you have any questions or need further assistance, please feel free to contact us.
 
 Wishing you success in your natural language processing journey!
+
+---
